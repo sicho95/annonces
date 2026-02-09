@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Isochrone Immo (ORS Direct + Proxy Leboncoin)</title>
+    <title>Isochrone Immo (Bien'ici API)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -12,35 +12,35 @@
     <style>
         body { font-family: 'Segoe UI', system-ui, sans-serif; background-color: #f0f2f5; color: #1c1e21; margin: 0; padding: 20px; }
         .container { max-width: 1000px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        h1 { color: #1877f2; text-align: center; margin-bottom: 25px; font-size: 1.8rem; }
+        h1 { color: #fecb00; text-align: center; margin-bottom: 25px; }
         .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #e4e6eb; }
         label { display: block; margin-bottom: 8px; font-weight: 600; color: #4b4f56; }
         input, select { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 14px; background-color: #1877f2; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        button:hover { background-color: #166fe5; }
+        button { width: 100%; padding: 14px; background-color: #fecb00; color: #1c1e21; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #e5b600; }
         button:disabled { background-color: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
-        #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; }
-        .loading { background-color: #e7f3ff; color: #1877f2; }
+        #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; font-weight: 500; }
+        .loading { background-color: #fff8e1; color: #856404; }
         .success { background-color: #e4f7eb; color: #0f7b3b; }
         .error { background-color: #ffebe8; color: #c92a2a; }
         #map { height: 550px; width: 100%; margin-top: 25px; border-radius: 8px; display: none; }
-        #results-list { list-style: none; padding: 0; max-height: 250px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; margin-top: 10px; }
-        #results-list li { padding: 10px 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; }
+        #results-list { list-style: none; padding: 0; max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; margin-top: 10px; }
+        #results-list li { padding: 10px 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .badge-valid { background: #e4f7eb; color: #0f7b3b; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
         .badge-invalid { background: #f0f2f5; color: #65676b; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-        .csv-btn { display: inline-block; width: 100%; margin-top: 10px; padding: 12px; background-color: #42b72a; color: white; text-decoration: none; border-radius: 6px; text-align: center; font-weight: bold; box-sizing: border-box; }
+        .csv-btn { display: inline-block; width: 100%; margin-top: 10px; padding: 12px; background-color: #42b72a; color: white; text-decoration: none; border-radius: 6px; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>📍 Filtre Immo Isochrone</h1>
+    <h1>📍 Filtre Immo Isochrone (Bien'ici)</h1>
 
     <div class="section">
-        <label>1. Isochrone (OpenRouteService)</label>
-        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson">
+        <label>1. Isochrone</label>
+        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Adresse de départ">
         <div style="display: flex; gap: 15px;">
-            <div style="flex: 1;"><label>Temps (min)</label><input type="number" id="duration" value="60"></div>
+            <div style="flex: 1;"><label>Temps (min)</label><input type="number" id="duration" value="45" max="60"></div>
             <div style="flex: 1;">
                 <label>Mode</label>
                 <select id="profile">
@@ -52,8 +52,12 @@
     </div>
 
     <div class="section">
-        <label>2. Recherche (Leboncoin)</label>
-        <input type="text" id="url" value="https://www.leboncoin.fr/recherche?category=9&locations=Le_Plessis-Robinson_92350">
+        <label>2. Zone de recherche Bien'ici</label>
+        <input type="text" id="citySearch" value="Le Plessis-Robinson" placeholder="Ville ou zone">
+        <p style="font-size: 0.85em; color: #666; margin-top: -10px;">
+            Saisissez une ville proche de votre zone. L'outil extraira toutes les villes avec annonces à proximité.
+        </p>
+        
         <button id="runBtn" onclick="runAnalysis()">🚀 Lancer l'analyse</button>
         <div id="status"></div>
     </div>
@@ -70,9 +74,8 @@
 <script>
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
     const ORS_API_URL = 'https://api.openrouteservice.org/v2/isochrones/';
-    const ORS_KEY = '5b3ce3597851110001cf6248c89288e1781447039577239201089947'; // Clé Publique Gratuite
+    const BIENICI_API = 'https://www.bienici.com/realEstateAds.json';
     
-    // Proxy Worker pour Leboncoin UNIQUEMENT
     const PROXY_BASE = 'https://proxy.sicho95.workers.dev/';
     const getProxyUrl = (url) => `${PROXY_BASE}?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
 
@@ -85,75 +88,79 @@
         el.innerText = msg;
     }
 
-    // 1. ISOCHRONE (DIRECT ORS - CORS OK)
-    // --- ISOCHRONE (VIA PROXY AVEC AUTH INJECTÉE) ---
+    // 1. ISOCHRONE
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
         const profile = document.getElementById('profile').value;
 
         updateStatus("Géocodage...", "loading");
-        const geoUrl = `${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`;
-        const geoRes = await fetch(geoUrl).then(r => r.json());
-        
+        const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
         if (!geoRes.length) throw new Error("Adresse introuvable");
         const [lon, lat] = [parseFloat(geoRes[0].lon), parseFloat(geoRes[0].lat)];
 
-        updateStatus("Calcul ORS (via Proxy)...", "loading");
-
-        // URL Cible ORS
-        const targetUrl = `${ORS_API_URL}${profile}`; // https://api.openrouteservice.org/v2/isochrones/...
+        updateStatus("Calcul isochrone...", "loading");
         
-        // Appel au Proxy
-        // NOTE: On n'envoie PAS la clé ici, le worker l'ajoute !
-        const proxyUrl = getProxyUrl(targetUrl);
-
-        const orsBody = {
-            locations: [[lon, lat]],
-            range: [duration * 60],
-            range_type: "time"
-        };
-
-        const res = await fetch(proxyUrl, {
+        const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orsBody)
+            body: JSON.stringify({
+                locations: [[lon, lat]],
+                range: [duration * 60],
+                range_type: "time"
+            })
         });
-
-        if (!res.ok) {
-            const errTxt = await res.text();
-            throw new Error(`Erreur ORS (${res.status}): ${errTxt}`);
-        }
-
+        if (!res.ok) throw new Error("Erreur ORS");
         isochronePolygon = await res.json();
         return isochronePolygon;
     }
 
-    // 2. SCRAPING LEBONCOIN (VIA PROXY)
-    async function getCommunesFromUrl() {
-        const url = document.getElementById('url').value;
-        updateStatus("Scraping Leboncoin (via Proxy)...", "loading");
+    // 2. SCRAPING BIEN'ICI (API JSON)
+    async function getCommunesFromBienici() {
+        const city = document.getElementById('citySearch').value;
+        updateStatus("Récupération annonces Bien'ici...", "loading");
+        
         const communes = new Set();
+        
+        // Recherche via leur API JSON (on simule une recherche large)
+        // Filtres basiques : Achat, rayon 50km autour de la ville
+        const filters = {
+            filterType: "buy",
+            propertyType: ["house", "flat"],
+            page: 1,
+            resultsPerPage: 100,
+            maxAuthorizedResults: 100,
+            sortBy: "relevance",
+            sortOrder: "desc",
+            onTheMarket: [true],
+            zoneIdsByTypes: {
+                zoneIds: ["-"+city.replace(/\s+/g, '-').toLowerCase()]
+            }
+        };
 
-        for (let p = 1; p <= 2; p++) {
-            let pageUrl = url + (url.includes('?') ? '&' : '?') + `page=${p}`;
-            try {
-                // Ici on utilise le proxy car LBC bloque le direct
-                const html = await fetch(getProxyUrl(pageUrl)).then(r => r.text());
-                const text = new DOMParser().parseFromString(html, "text/html").body.innerText.toLowerCase();
-                
-                // Regex "Ville (CP)"
-                for (const m of text.matchAll(/([a-zA-ZÀ-ÿ]+(?:[\s-][a-zA-ZÀ-ÿ]+)*)\s+(\d{5})/g)) {
-                    let city = m[1].trim();
-                    if (city.length > 2 && !city.includes('http')) {
-                        communes.add(city.charAt(0).toUpperCase() + city.slice(1));
+        try {
+            const apiUrl = `${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`;
+            const proxiedUrl = getProxyUrl(apiUrl);
+            
+            const response = await fetch(proxiedUrl);
+            if (!response.ok) throw new Error(`Erreur Bien'ici API (${response.status})`);
+            
+            const data = await response.json();
+            
+            if (data.realEstateAds && data.realEstateAds.length > 0) {
+                data.realEstateAds.forEach(ad => {
+                    if (ad.city) {
+                        communes.add(ad.city);
                     }
-                }
-            } catch (e) { console.warn("Erreur page " + p, e); }
+                });
+            }
+        } catch (e) {
+            console.warn("Erreur API Bien'ici", e);
+            throw new Error("Impossible de récupérer les annonces. Vérifiez la ville ou le proxy.");
         }
         
-        const res = Array.from(communes).slice(0, 50);
-        if (!res.length) throw new Error("Aucune ville trouvée (Proxy bloqué ?)");
+        const res = Array.from(communes);
+        if (!res.length) throw new Error("Aucune annonce trouvée pour cette zone.");
         return res;
     }
 
@@ -163,7 +170,7 @@
         btn.disabled = true;
         try {
             await getIsochrone();
-            const cities = await getCommunesFromUrl();
+            const cities = await getCommunesFromBienici();
             
             updateStatus(`Filtrage de ${cities.length} villes...`, "loading");
             const valid = [];
@@ -178,36 +185,37 @@
             }
             map.eachLayer(l => !l._url && map.removeLayer(l));
             
-            L.geoJSON(isochronePolygon, {style: {color: '#1877f2', fillOpacity: 0.2}}).addTo(map);
-            map.fitBounds(L.geoJSON(isochronePolygon).getBounds());
+            const isoLayer = L.geoJSON(isochronePolygon, {style: {color: '#fecb00', fillOpacity: 0.2}}).addTo(map);
+            map.fitBounds(isoLayer.getBounds());
 
             for (const city of cities) {
-                // Nominatim (Direct)
                 const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
                 if (geo.length) {
                     const [lat, lon] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
                     const isInside = turf.booleanPointInPolygon(turf.point([lon, lat]), isochronePolygon);
                     
                     const li = document.createElement('li');
-                    li.innerHTML = `<span>${city}</span> <span class="${isInside ? 'badge-valid' : 'badge-invalid'}">${isInside ? '✅ OK' : 'Hors zone'}</span>`;
-                    document.getElementById('results-list').appendChild(li);
-
                     if (isInside) {
+                        li.innerHTML = `<span>${city}</span> <span class="badge-valid">✅ Dans la zone</span>`;
                         L.marker([lat, lon]).addTo(map).bindPopup(city);
                         valid.push({name: city, lat, lon});
+                    } else {
+                        li.innerHTML = `<span>${city}</span> <span class="badge-invalid">Hors zone</span>`;
                     }
+                    document.getElementById('results-list').appendChild(li);
                 }
-                await new Promise(r => setTimeout(r, 1000)); // Rate limit
+                await new Promise(r => setTimeout(r, 600));
             }
             
             // CSV
             const csv = "data:text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
             document.getElementById('downloadLink').href = encodeURI(csv);
-            document.getElementById('downloadLink').download = "resultats.csv";
+            document.getElementById('downloadLink').download = "bienici_resultats.csv";
             
-            updateStatus(`Terminé ! ${valid.length} villes valides.`, "success");
+            updateStatus(`✅ Terminé ! ${valid.length}/${cities.length} villes dans la zone.`, "success");
         } catch (e) {
-            updateStatus("Erreur: " + e.message, "error");
+            updateStatus("❌ " + e.message, "error");
+            console.error(e);
         }
         btn.disabled = false;
     }

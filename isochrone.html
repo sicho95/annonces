@@ -105,7 +105,7 @@
         el.innerText = msg;
     }
 
-    // 1. ISOCHRONE (Logique de sélection API)
+    // 1. ISOCHRONE (Hybride ORS / Valhalla + Securité Turf)
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
@@ -118,71 +118,63 @@
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
-        // LOGIQUE DE SÉLECTION API
-        // Si > 60 min OU "éviter péages" cochée => Valhalla
         const useValhalla = (duration > 60) || (avoidTolls && profile === 'driving-car');
+        const apiName = useValhalla ? "Valhalla (Options/Temps long)" : "OpenRouteService";
+        updateStatus(`Calcul isochrone (${apiName})...`, "loading");
 
-        const apiName = useValhalla ? "Valhalla (Options/Temps long)" : "OpenRouteService (Rapide)";
-        updateStatus(`Calcul isochrone avec ${apiName}...`, "loading");
+        let geoJson = null;
 
         if (!useValhalla) {
-            // --- ORS (Standard, Rapide, sans options complexes) ---
-            try {
-                const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        locations: [[startLon, startLat]],
-                        range: [duration * 60],
-                        range_type: "time"
-                    })
-                });
-                if (!res.ok) throw new Error("Erreur ORS");
-                isochronePolygon = await res.json();
-            } catch (e) { throw new Error("Erreur ORS: " + e.message); }
+            // ORS
+            const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    locations: [[startLon, startLat]],
+                    range: [duration * 60],
+                    range_type: "time"
+                })
+            });
+            if (!res.ok) throw new Error(`Erreur ORS (${res.status})`);
+            geoJson = await res.json();
         } else {
-            // --- VALHALLA (Gestion Péages ou Temps > 60min) ---
-            try {
-                const mode = profile === 'driving-car' ? 'auto' : 'pedestrian';
-                
-                // Configuration Valhalla
-                const costingOptions = {};
-                if (avoidTolls && mode === 'auto') {
-                    costingOptions.auto = {
-                        use_tolls: 0,        // 0 = Eviter les péages (routes payantes)
-                        toll_booth_penalty: 2000 // Forte pénalité en secondes
-                        // Note: On ne met pas use_highways:0 pour autoriser les autoroutes gratuites
-                    };
-                }
+            // VALHALLA
+            const mode = profile === 'driving-car' ? 'auto' : 'pedestrian';
+            const costingOptions = {};
+            if (avoidTolls && mode === 'auto') {
+                costingOptions.auto = { use_tolls: 0, toll_booth_penalty: 2000 };
+            }
 
-                const body = {
+            const res = await fetch(getProxyUrl(VALHALLA_API), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     locations: [{lat: startLat, lon: startLon}],
                     costing: mode,
                     costing_options: costingOptions,
-                    contours: [{time: duration}], // En minutes
+                    contours: [{time: duration}],
                     polygons: true
-                };
-                
-                const res = await fetch(getProxyUrl(VALHALLA_API), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                
-                if (!res.ok) throw new Error("Erreur Valhalla (Serveur surchargé ?)");
-                const json = await res.json();
-                
-                isochronePolygon = {
+                })
+            });
+            if (!res.ok) throw new Error(`Erreur Valhalla (${res.status})`);
+            const json = await res.json();
+            
+            // Conversion Robuste Valhalla -> FeatureCollection
+            if (json.features && json.features.length > 0) {
+                geoJson = {
                     type: "FeatureCollection",
-                    features: [{
-                        type: "Feature",
-                        properties: {},
-                        geometry: json.features[0].geometry
-                    }]
+                    features: json.features
                 };
-            } catch (e) { throw new Error("Erreur Valhalla: " + e.message); }
+            } else {
+                throw new Error("Valhalla n'a renvoyé aucun polygone.");
+            }
         }
         
+        if (!geoJson || !geoJson.features || geoJson.features.length === 0) {
+             throw new Error("Format GeoJSON invalide reçu de l'API");
+        }
+        
+        isochronePolygon = geoJson;
         return isochronePolygon;
     }
 
@@ -217,7 +209,7 @@
             }
         } catch (e) {
             console.warn(e);
-            throw new Error("Erreur récupération annonces.");
+            throw new Error("Erreur récupération annonces (Proxy bloqué ?)");
         }
         
         const res = Array.from(communes);
@@ -225,7 +217,7 @@
         return res;
     }
 
-    // 3. MAIN
+    // 3. MAIN (CORRIGÉ POUR TURF)
     async function runAnalysis() {
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
@@ -258,7 +250,20 @@
                 const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
                 if (geo.length) {
                     const [lat, lon] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
-                    const isInside = turf.booleanPointInPolygon(turf.point([lon, lat]), isochronePolygon);
+                    const pt = turf.point([lon, lat]);
+                    
+                    let isInside = false;
+                    try {
+                        // FIX TURF: Itération sur chaque feature pour gérer MultiPolygon/Collection
+                        for (const feature of isochronePolygon.features) {
+                            if (turf.booleanPointInPolygon(pt, feature)) {
+                                isInside = true;
+                                break;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn(`Erreur géométrie pour ${city}`, err);
+                    }
                     
                     const li = document.createElement('li');
                     if (isInside) {
@@ -270,21 +275,8 @@
                     }
                     document.getElementById('results-list').appendChild(li);
                 }
-                await new Promise(r => setTimeout(r, 400));
+                await new Promise(r => setTimeout(r, 300)); // Rate limit Nominatim
             }
             
             const csv = "data:text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
-            document.getElementById('downloadLink').href = encodeURI(csv);
-            document.getElementById('downloadLink').download = "resultats_immo.csv";
-            
-            updateStatus(`Terminé ! ${valid.length} villes trouvées.`, "success");
-        } catch (e) {
-            updateStatus("Erreur: " + e.message, "error");
-            console.error(e);
-        }
-        btn.disabled = false;
-    }
-</script>
-
-</body>
-</html>
+            docum

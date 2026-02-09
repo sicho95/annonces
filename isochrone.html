@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Isochrone Immo (Bien'ici + Radius)</title>
+    <title>Isochrone Immo (Bien'ici + Options)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -15,56 +15,63 @@
         h1 { color: #fecb00; text-align: center; margin-bottom: 25px; text-shadow: 1px 1px 0 #333; }
         .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #e4e6eb; }
         label { display: block; margin-bottom: 8px; font-weight: 600; color: #4b4f56; }
-        input, select { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; }
-        input[type="range"] { padding: 0; margin-top: 10px; }
+        input[type="text"], select { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; }
+        input[type="range"] { padding: 0; margin-top: 10px; width: 100%; }
+        .checkbox-group { margin-bottom: 15px; display: flex; align-items: center; gap: 10px; padding: 10px; background: #f9f9f9; border-radius: 6px; border: 1px solid #eee; }
+        .checkbox-group input { width: auto; margin: 0; cursor: pointer; }
+        .checkbox-group label { margin: 0; cursor: pointer; }
+        
         button { width: 100%; padding: 14px; background-color: #fecb00; color: #1c1e21; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         button:hover { background-color: #e5b600; }
         button:disabled { background-color: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
+        
         #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; font-weight: 500; }
         .loading { background-color: #fff8e1; color: #856404; }
         .success { background-color: #e4f7eb; color: #0f7b3b; }
         .error { background-color: #ffebe8; color: #c92a2a; }
+        
         #map { height: 600px; width: 100%; margin-top: 25px; border-radius: 8px; display: none; }
         #results-list { list-style: none; padding: 0; max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; margin-top: 10px; }
         #results-list li { padding: 10px 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .badge-valid { background: #e4f7eb; color: #0f7b3b; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
         .badge-invalid { background: #f0f2f5; color: #65676b; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
         .csv-btn { display: inline-block; width: 100%; margin-top: 10px; padding: 12px; background-color: #42b72a; color: white; text-decoration: none; border-radius: 6px; text-align: center; font-weight: bold; }
-        .info-text { font-size: 0.85em; color: #666; margin-top: -10px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>📍 Filtre Immo (Bien'ici + Radius)</h1>
+    <h1>📍 Filtre Immo (Bien'ici)</h1>
 
     <div class="section">
-        <label>1. Isochrone</label>
-        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Adresse de départ">
+        <label>1. Configurer le Trajet</label>
+        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Adresse de départ (ex: Gare de Lyon)">
         
-        <div style="display: flex; gap: 15px;">
-            <div style="flex: 1;">
-                <label>Temps (min) <span id="timeVal" style="font-weight:normal;color:#666;">60 min</span></label>
-                <input type="range" id="duration" value="60" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
-                <p class="info-text">Si > 60 min, utilise Valhalla (moins stable).</p>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+                <label>Temps max: <span id="timeVal" style="color:#666;">45 min</span></label>
+                <input type="range" id="duration" value="45" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
             </div>
-            <div style="flex: 1;">
-                <label>Mode</label>
+            
+            <div style="flex: 1; min-width: 200px;">
+                <label>Mode de transport</label>
                 <select id="profile">
                     <option value="driving-car">Voiture</option>
                     <option value="foot-walking">Piéton</option>
                 </select>
+                
+                <div class="checkbox-group">
+                    <input type="checkbox" id="avoidTolls">
+                    <label for="avoidTolls">🚫 Éviter les routes payantes (Péages)</label>
+                </div>
             </div>
         </div>
     </div>
 
     <div class="section">
-        <label>2. Zone de recherche Bien'ici</label>
-        <label>Rayon autour de l'adresse: <span id="radVal" style="font-weight:normal;color:#666;">30 km</span></label>
+        <label>2. Zone de recherche (Annonces)</label>
+        <label>Rayon de recherche: <span id="radVal" style="color:#666;">30 km</span></label>
         <input type="range" id="radius" value="30" min="5" max="100" step="5" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
-        <p class="info-text">
-            Cherche les annonces dans ce rayon pour extraire les villes. Plus le rayon est grand, plus le scan est long.
-        </p>
         
         <button id="runBtn" onclick="runAnalysis()">🚀 Lancer l'analyse</button>
         <div id="status"></div>
@@ -82,7 +89,7 @@
 <script>
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
     const ORS_API_URL = 'https://api.openrouteservice.org/v2/isochrones/';
-    const VALHALLA_API = 'https://valhalla1.openstreetmap.de/isochrone'; // Fallback > 60min
+    const VALHALLA_API = 'https://valhalla1.openstreetmap.de/isochrone';
     const BIENICI_API = 'https://www.bienici.com/realEstateAds.json';
     
     const PROXY_BASE = 'https://proxy.sicho95.workers.dev/';
@@ -98,11 +105,12 @@
         el.innerText = msg;
     }
 
-    // 1. ISOCHRONE (Hybride ORS / Valhalla)
+    // 1. ISOCHRONE (Logique de sélection API)
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
         const profile = document.getElementById('profile').value;
+        const avoidTolls = document.getElementById('avoidTolls').checked;
 
         updateStatus("Géocodage...", "loading");
         const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
@@ -110,11 +118,15 @@
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
-        updateStatus(`Calcul isochrone (${duration} min)...`, "loading");
-        
-        // CHOIX DE L'API SELON DURÉE
-        if (duration <= 60) {
-            // ORS (Plus stable, max 60 min)
+        // LOGIQUE DE SÉLECTION API
+        // Si > 60 min OU "éviter péages" cochée => Valhalla
+        const useValhalla = (duration > 60) || (avoidTolls && profile === 'driving-car');
+
+        const apiName = useValhalla ? "Valhalla (Options/Temps long)" : "OpenRouteService (Rapide)";
+        updateStatus(`Calcul isochrone avec ${apiName}...`, "loading");
+
+        if (!useValhalla) {
+            // --- ORS (Standard, Rapide, sans options complexes) ---
             try {
                 const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
                     method: 'POST',
@@ -129,13 +141,25 @@
                 isochronePolygon = await res.json();
             } catch (e) { throw new Error("Erreur ORS: " + e.message); }
         } else {
-            // VALHALLA (Gratuit, > 60 min, via Proxy pour éviter CORS)
+            // --- VALHALLA (Gestion Péages ou Temps > 60min) ---
             try {
                 const mode = profile === 'driving-car' ? 'auto' : 'pedestrian';
+                
+                // Configuration Valhalla
+                const costingOptions = {};
+                if (avoidTolls && mode === 'auto') {
+                    costingOptions.auto = {
+                        use_tolls: 0,        // 0 = Eviter les péages (routes payantes)
+                        toll_booth_penalty: 2000 // Forte pénalité en secondes
+                        // Note: On ne met pas use_highways:0 pour autoriser les autoroutes gratuites
+                    };
+                }
+
                 const body = {
                     locations: [{lat: startLat, lon: startLon}],
                     costing: mode,
-                    contours: [{time: duration}], // Valhalla prend des minutes par défaut sur cette démo
+                    costing_options: costingOptions,
+                    contours: [{time: duration}], // En minutes
                     polygons: true
                 };
                 
@@ -144,11 +168,10 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
-                if (!res.ok) throw new Error("Erreur Valhalla (>60min)");
+                
+                if (!res.ok) throw new Error("Erreur Valhalla (Serveur surchargé ?)");
                 const json = await res.json();
                 
-                // Conversion format Valhalla -> GeoJSON standard
-                // Valhalla renvoie features[0].geometry
                 isochronePolygon = {
                     type: "FeatureCollection",
                     features: [{
@@ -163,51 +186,37 @@
         return isochronePolygon;
     }
 
-    // 2. SCRAPING BIEN'ICI (API + Radius)
+    // 2. SCRAPING BIEN'ICI
     async function getCommunesFromBienici() {
         const radiusKm = parseInt(document.getElementById('radius').value);
         updateStatus(`Recherche Bien'ici (Rayon ${radiusKm}km)...`, "loading");
         
         const communes = new Set();
-        
-        // Filtre géographique par point + rayon (en mètres)
         const filters = {
             filterType: "buy",
             propertyType: ["house", "flat"],
             page: 1,
-            resultsPerPage: 100, // Max autorisé
+            resultsPerPage: 100,
             maxAuthorizedResults: 2000,
             onTheMarket: [true],
-            geoBox: null // On utilise lat/lng/radius à la place
+            lat: startLat,
+            lng: startLon,
+            radius: radiusKm * 1000
         };
-        
-        // Construction URL API avec paramètres geo
-        // Bien'ici utilise souvent une "zoneIds" mais supporte aussi lat/lng/radius dans certains endpoints
-        // Astuce : On utilise la recherche par "around" si possible, sinon on simule une boite.
-        
-        // Pour être sûr, on utilise le filtre "geo" explicite
-        filters.lat = startLat;
-        filters.lng = startLon;
-        filters.radius = radiusKm * 1000;
 
         try {
             const apiUrl = `${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`;
-            const proxiedUrl = getProxyUrl(apiUrl);
-            
-            const response = await fetch(proxiedUrl);
-            if (!response.ok) throw new Error(`Erreur Bien'ici API (${response.status})`);
-            
-            const data = await response.json();
+            const res = await fetch(getProxyUrl(apiUrl));
+            if (!res.ok) throw new Error("Erreur Bien'ici");
+            const data = await res.json();
             
             if (data.realEstateAds) {
                 data.realEstateAds.forEach(ad => {
-                    if (ad.city) {
-                        communes.add(ad.city);
-                    }
+                    if (ad.city) communes.add(ad.city);
                 });
             }
         } catch (e) {
-            console.warn("Erreur API Bien'ici", e);
+            console.warn(e);
             throw new Error("Erreur récupération annonces.");
         }
         
@@ -221,13 +230,8 @@
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
         try {
-            // Reset
             if (map) { map.remove(); map = null; }
-            
-            // Step 1
             await getIsochrone();
-            
-            // Step 2
             const cities = await getCommunesFromBienici();
             
             updateStatus(`Filtrage de ${cities.length} villes...`, "loading");
@@ -235,18 +239,20 @@
             document.getElementById('results-area').style.display = 'block';
             document.getElementById('results-list').innerHTML = '';
 
-            // Init Map
             document.getElementById('map').style.display = 'block';
             map = L.map('map').setView([startLat, startLon], 9);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             
             // Affichage Isochrone
-            const isoLayer = L.geoJSON(isochronePolygon, {style: {color: '#fecb00', fillColor: '#fecb00', fillOpacity: 0.2}}).addTo(map);
-            map.fitBounds(isoLayer.getBounds());
+            const color = document.getElementById('avoidTolls').checked ? '#e74c3c' : '#fecb00';
+            L.geoJSON(isochronePolygon, {style: {color: color, fillColor: color, fillOpacity: 0.2}}).addTo(map);
             
-            // Cercle de recherche (pour visualiser le rayon Bien'ici)
+            // Cercle Rayon
             const radiusKm = parseInt(document.getElementById('radius').value);
             L.circle([startLat, startLon], {radius: radiusKm * 1000, color: 'gray', fill: false, dashArray: '5, 5'}).addTo(map);
+
+            const bounds = L.geoJSON(isochronePolygon).getBounds();
+            map.fitBounds(bounds);
 
             for (const city of cities) {
                 const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
@@ -264,13 +270,12 @@
                     }
                     document.getElementById('results-list').appendChild(li);
                 }
-                await new Promise(r => setTimeout(r, 400)); // Rate limit
+                await new Promise(r => setTimeout(r, 400));
             }
             
-            // CSV
             const csv = "data:text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
             document.getElementById('downloadLink').href = encodeURI(csv);
-            document.getElementById('downloadLink').download = "bienici_resultats.csv";
+            document.getElementById('downloadLink').download = "resultats_immo.csv";
             
             updateStatus(`Terminé ! ${valid.length} villes trouvées.`, "success");
         } catch (e) {

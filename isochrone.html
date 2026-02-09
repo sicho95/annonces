@@ -86,33 +86,45 @@
     }
 
     // 1. ISOCHRONE (DIRECT ORS - CORS OK)
+    // --- ISOCHRONE (VIA PROXY AVEC AUTH INJECTÉE) ---
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
         const profile = document.getElementById('profile').value;
 
-        updateStatus("Géocodage adresse...", "loading");
-        const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
+        updateStatus("Géocodage...", "loading");
+        const geoUrl = `${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`;
+        const geoRes = await fetch(geoUrl).then(r => r.json());
+        
         if (!geoRes.length) throw new Error("Adresse introuvable");
         const [lon, lat] = [parseFloat(geoRes[0].lon), parseFloat(geoRes[0].lat)];
 
-        updateStatus("Calcul isochrone (ORS Direct)...", "loading");
+        updateStatus("Calcul ORS (via Proxy)...", "loading");
+
+        // URL Cible ORS
+        const targetUrl = `${ORS_API_URL}${profile}`; // https://api.openrouteservice.org/v2/isochrones/...
         
-        // Appel Direct (headers Auth gérés par le navigateur)
-        const res = await fetch(`${ORS_API_URL}${profile}`, {
+        // Appel au Proxy
+        // NOTE: On n'envoie PAS la clé ici, le worker l'ajoute !
+        const proxyUrl = getProxyUrl(targetUrl);
+
+        const orsBody = {
+            locations: [[lon, lat]],
+            range: [duration * 60],
+            range_type: "time"
+        };
+
+        const res = await fetch(proxyUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': ORS_KEY
-            },
-            body: JSON.stringify({
-                locations: [[lon, lat]],
-                range: [duration * 60],
-                range_type: "time"
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(orsBody)
         });
 
-        if (!res.ok) throw new Error(`Erreur ORS: ${res.status} (Vérifiez la clé ou les quotas)`);
+        if (!res.ok) {
+            const errTxt = await res.text();
+            throw new Error(`Erreur ORS (${res.status}): ${errTxt}`);
+        }
+
         isochronePolygon = await res.json();
         return isochronePolygon;
     }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Isochrone Immo (GH Corrigé)</title>
+    <title>Isochrone Immo (Stable)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -23,7 +23,7 @@
         button:hover { background-color: #e5b600; }
         button:disabled { background-color: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
         
-        #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; font-weight: 500; word-break: break-all; }
+        #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; font-weight: 500; }
         .loading { background-color: #fff8e1; color: #856404; }
         .success { background-color: #e4f7eb; color: #0f7b3b; }
         .error { background-color: #ffebe8; color: #c92a2a; }
@@ -38,7 +38,7 @@
 <body>
 
 <div class="container">
-    <h1>📍 Filtre Immo (Correction V3)</h1>
+    <h1>📍 Filtre Immo (Valhalla Stable)</h1>
 
     <div class="section">
         <label>1. Configurer le Trajet</label>
@@ -47,21 +47,22 @@
         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
             <div style="flex: 1; min-width: 200px;">
                 <label>Temps max: <span id="timeVal" style="color:#666;">90 min</span></label>
-                <input type="range" id="duration" value="90" min="10" max="180" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
+                <input type="range" id="duration" value="90" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
             </div>
             
             <div style="flex: 1; min-width: 200px;">
-                <label>API</label>
+                <label>Mode de calcul</label>
                 <select id="apiSelect">
-                    <option value="graphhopper">🟢 GraphHopper (Votre Clé)</option>
+                    <option value="auto">⚡ Auto (Recommandé)</option>
+                    <option value="valhalla">🟣 Valhalla (Gratuit > 60min)</option>
                     <option value="ors">🔵 OpenRouteService (Max 60min)</option>
-                    <option value="valhalla">🟣 Valhalla (Backup)</option>
                 </select>
                 
                 <div class="checkbox-group">
                     <input type="checkbox" id="avoidTolls">
-                    <label for="avoidTolls">🚫 Éviter les péages</label>
+                    <label for="avoidTolls">🚫 Éviter les péages (ORS < 60min)</label>
                 </div>
+                <small style="color:#666; font-size:0.8em; font-style:italic;">Note: Valhalla (le seul gratuit > 60min) ignore souvent l'option péage sur sa démo.</small>
             </div>
         </div>
     </div>
@@ -85,16 +86,12 @@
 </div>
 
 <script>
-    // --- CONFIGURATION ---
-    const GH_API_KEY = '940ddac6-b9e1-4a3b-b530-53b5f25cc591'; // Clé intégrée
-    
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
     const ORS_API_URL = 'https://api.openrouteservice.org/v2/isochrones/';
     const VALHALLA_API = 'https://valhalla1.openstreetmap.de/isochrone';
-    const GH_API_URL = 'https://graphhopper.com/api/1/isochrone';
     const BIENICI_API = 'https://www.bienici.com/realEstateAds.json';
     
-    // Proxy pour contourner les erreurs CORS du navigateur (indispensable pour GH depuis le navigateur parfois)
+    // Proxy pour contourner les erreurs CORS
     const PROXY_BASE = 'https://proxy.sicho95.workers.dev/';
     const getProxyUrl = (url) => `${PROXY_BASE}?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
 
@@ -112,7 +109,7 @@
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
         const avoidTolls = document.getElementById('avoidTolls').checked;
-        const selectedApi = document.getElementById('apiSelect').value;
+        let selectedApi = document.getElementById('apiSelect').value;
 
         updateStatus("Géocodage...", "loading");
         const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
@@ -120,42 +117,19 @@
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
+        // LOGIQUE AUTO
+        if (selectedApi === 'auto') {
+            if (duration <= 60 && avoidTolls) selectedApi = 'ors'; // ORS gère mieux les péages
+            else if (duration <= 60) selectedApi = 'ors';
+            else selectedApi = 'valhalla'; // Seul choix > 60min
+        }
+
         updateStatus(`Calcul isochrone (${selectedApi.toUpperCase()})...`, "loading");
         let geoJson = null;
 
-        // --- API 1: GRAPH HOPPER (Via Proxy pour sécurité CORS) ---
-        if (selectedApi === 'graphhopper') {
-            try {
-                // Construction URL
-                let url = `${GH_API_URL}?point=${startLat},${startLon}&time_limit=${duration*60}&profile=car&key=${GH_API_KEY}`;
-                
-                // On passe par le proxy pour être sûr à 100% que le navigateur ne bloque pas
-                const res = await fetch(getProxyUrl(url));
-                
-                if (!res.ok) {
-                    const errText = await res.text();
-                    throw new Error(`Erreur GraphHopper (${res.status}): ${errText.substring(0, 100)}`);
-                }
-                
-                const json = await res.json();
-                if (json.polygons) {
-                    geoJson = {
-                        type: "FeatureCollection",
-                        features: json.polygons.map(p => ({
-                            type: "Feature",
-                            geometry: p.geometry,
-                            properties: p.properties
-                        }))
-                    };
-                }
-            } catch (e) {
-                // On ne fallback PAS automatiquement pour que vous voyiez la vraie erreur GH
-                throw e; 
-            }
-        }
-
-        // --- API 2: OPENROUTE SERVICE ---
-        else if (selectedApi === 'ors') {
+        // --- API 1: OPENROUTE SERVICE (Max 60, Top Qualité) ---
+        if (selectedApi === 'ors') {
+            if (duration > 60) throw new Error("ORS est limité à 60 min. Passez en mode Valhalla ou réduisez la durée.");
             try {
                 const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
                     method: 'POST',
@@ -171,20 +145,17 @@
             } catch (e) { throw e; }
         }
         
-        // --- API 3: VALHALLA (Simplifiée) ---
+        // --- API 2: VALHALLA (Max 120, Robuste) ---
         else if (selectedApi === 'valhalla') {
             try {
-                // On simplifie la requête pour éviter l'erreur 400
+                // CORRECTION MAJEURE : On envoie une requête minimaliste
+                // On retire 'costing_options' qui cause l'erreur 400 sur le serveur démo
                 const body = {
                     locations: [{lat: startLat, lon: startLon}],
                     costing: 'auto',
                     contours: [{time: duration}], 
                     polygons: true
                 };
-                // Seulement ajouter les options si nécessaire (cause fréquente d'erreurs sur le serveur démo)
-                if (avoidTolls) {
-                    body.costing_options = { auto: { use_tolls: 0 } };
-                }
 
                 const res = await fetch(getProxyUrl(VALHALLA_API), {
                     method: 'POST',
@@ -194,6 +165,7 @@
                 
                 if (!res.ok) {
                     const txt = await res.text();
+                    // Fallback en cas d'erreur spécifique Valhalla
                     throw new Error(`Erreur Valhalla (${res.status}): ${txt}`);
                 }
                 const json = await res.json();
@@ -246,7 +218,8 @@
             map = L.map('map').setView([startLat, startLon], 9);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             
-            const color = document.getElementById('avoidTolls').checked ? '#e74c3c' : '#fecb00'; 
+            // Couleur selon l'API utilisée
+            const color = document.getElementById('apiSelect').value === 'ors' ? '#2196F3' : '#9C27B0'; 
             L.geoJSON(isochronePolygon, {style: {color: color, fillColor: color, fillOpacity: 0.2}}).addTo(map);
             
             const radiusKm = parseInt(document.getElementById('radius').value);
@@ -276,10 +249,10 @@
                         document.getElementById('results-list').appendChild(li);
                     }
                 } catch (e) {}
-                await new Promise(r => setTimeout(r, 100)); // Petit délai pour pas spammer Nominatim
+                await new Promise(r => setTimeout(r, 100));
             }
             
-            const csv = "text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
+            const csv = "data:text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
             document.getElementById('downloadLink').href = encodeURI(csv);
             document.getElementById('downloadLink').download = "resultats_isochrone.csv";
             updateStatus(`Terminé ! ${valid.length} villes trouvées.`, "success");

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chasseur Immo V12 (Expert)</title>
+    <title>Chasseur Immo V13 (Tolérance)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -44,6 +44,8 @@
         
         .badge-ok { background: #d1fae5; color: #065f46; padding: 4px 8px; border-radius: 6px; font-size: 0.8em; font-weight: bold; }
         .badge-warn { background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 6px; font-size: 0.8em; font-weight: bold; }
+        .badge-lim { background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 6px; font-size: 0.8em; font-weight: bold; }
+
         .btn-see { background: #eef2ff; color: #007aff; border: none; padding: 8px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; }
         
         #details-panel { display: none; border-top: 2px solid #e5e5ea; margin-top: 20px; padding-top: 20px; }
@@ -59,7 +61,7 @@
 <body>
 
 <div class="container">
-    <h1>🎯 Chasseur Immo V12</h1>
+    <h1>🎯 Chasseur Immo V13</h1>
 
     <div class="section">
         <h3>1. Vos Critères</h3>
@@ -69,14 +71,13 @@
             <div><label>Pièces Min</label><input type="number" id="minRooms" value="5"></div>
         </div>
         
-        <!-- TOUS LES TYPES DE BIENS -->
         <div class="check-grid">
-            <label class="check-pill"><input type="checkbox" id="typeHouse" checked> Maison / Villa</label>
-            <label class="check-pill"><input type="checkbox" id="typeFlat"> Appartement</label>
+            <label class="check-pill"><input type="checkbox" id="typeHouse" checked> Maison</label>
+            <label class="check-pill"><input type="checkbox" id="typeFlat"> Appart</label>
             <label class="check-pill"><input type="checkbox" id="typeLand"> Terrain</label>
             <label class="check-pill"><input type="checkbox" id="typeBuilding"> Immeuble</label>
-            <label class="check-pill"><input type="checkbox" id="typeLoft" checked> Loft / Atelier</label>
-            <label class="check-pill"><input type="checkbox" id="typeCastle" checked> Château / Manoir</label>
+            <label class="check-pill"><input type="checkbox" id="typeLoft" checked> Loft/Atelier</label>
+            <label class="check-pill"><input type="checkbox" id="typeCastle" checked> Château</label>
         </div>
     </div>
 
@@ -92,7 +93,7 @@
 
         <div class="slider-group">
             <div class="slider-header">
-                <label>Temps de Trajet Max</label>
+                <label>Trajet + Tolérance (+15%)</label>
                 <span id="timeVal" style="color:#007aff; font-weight:bold;">90 min</span>
             </div>
             <input type="range" id="duration" value="90" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
@@ -100,10 +101,10 @@
 
         <div class="slider-group">
             <div class="slider-header">
-                <label>Rayon Scraping (Auto-ajusté)</label>
-                <span id="radVal" style="color:#007aff; font-weight:bold;">200 km</span>
+                <label>Rayon Scraping</label>
+                <span id="radVal" style="color:#007aff; font-weight:bold;">250 km</span>
             </div>
-            <input type="range" id="radius" value="200" min="50" max="300" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
+            <input type="range" id="radius" value="250" min="50" max="300" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
         </div>
 
         <button id="runBtn" onclick="runAnalysis()">🚀 SCANNER TOUT</button>
@@ -141,9 +142,13 @@
         el.scrollTop = el.scrollHeight;
     }
 
+    // ON AJOUTE UNE ZONE TAMPON DE 15% DANS L'ISOCHRONE
     async function getIsochrone() {
         const address = document.getElementById('address').value;
-        const duration = parseInt(document.getElementById('duration').value);
+        const baseDuration = parseInt(document.getElementById('duration').value);
+        // ASTUCE : On demande un polygone un peu plus grand (+15%) pour la tolérance
+        const duration = Math.round(baseDuration * 1.15); 
+        
         const avoidTolls = document.getElementById('avoidTolls').checked;
 
         log(`Géocodage...`);
@@ -155,7 +160,7 @@
         let geoJson = null;
 
         if (duration <= 60) {
-            log(`Calcul ORS...`);
+            log(`Calcul ORS (Max ${duration} min)...`);
             const body = { 
                 locations: [[startLon, startLat]], 
                 range: [duration * 60], 
@@ -171,7 +176,7 @@
             } catch(e) { log("Erreur ORS", "error"); }
 
         } else {
-            log(`Calcul Valhalla...`);
+            log(`Calcul Valhalla (Max ${duration} min)...`);
             const costingOpts = { auto: {} };
             if (avoidTolls) {
                 costingOpts.auto.use_tolls = 0; 
@@ -208,19 +213,18 @@
             lat: startLat, lng: startLon, radius: radiusKm * 1000
         };
         
-        // MAPPING DES TYPES BIEN'ICI
         if (document.getElementById('typeHouse').checked) filters.propertyType.push("house");
         if (document.getElementById('typeFlat').checked) filters.propertyType.push("flat");
         if (document.getElementById('typeLand').checked) filters.propertyType.push("land");
-        if (document.getElementById('typeBuilding').checked) filters.propertyType.push("building"); // Immeuble
-        if (document.getElementById('typeLoft').checked) filters.propertyType.push("loft"); // Loft/Atelier
-        if (document.getElementById('typeCastle').checked) filters.propertyType.push("castle"); // Château/Manoir
+        if (document.getElementById('typeBuilding').checked) filters.propertyType.push("building");
+        if (document.getElementById('typeLoft').checked) filters.propertyType.push("loft");
+        if (document.getElementById('typeCastle').checked) filters.propertyType.push("castle");
         
         if (document.getElementById('maxPrice').value) filters.maxPrice = parseInt(document.getElementById('maxPrice').value);
         if (document.getElementById('minArea').value) filters.minArea = parseInt(document.getElementById('minArea').value);
         if (document.getElementById('minRooms').value) filters.minRooms = parseInt(document.getElementById('minRooms').value);
 
-        while (hasMore && page <= 25) { // Max 25 pages pour être sûr
+        while (hasMore && page <= 30) { 
             filters.page = page;
             log(`Page ${page}...`);
             try {
@@ -274,10 +278,13 @@
         try {
             if (map) { map.remove(); map = null; }
 
+            // 1. Zone
             isochronePolygon = await getIsochrone();
+            
+            // 2. Annonces
             globalAds = await getAllAds();
             if (globalAds.length === 0) throw new Error("0 annonce.");
-            log(`${globalAds.length} annonces uniques récupérées.`, "success");
+            log(`${globalAds.length} annonces scannées.`, "success");
 
             const communesMap = new Map();
             globalAds.forEach(ad => { if (ad.city) communesMap.set(ad.city, (communesMap.get(ad.city) || 0) + 1); });
@@ -296,11 +303,12 @@
             let validCount = 0;
             const cities = Array.from(communesMap.keys());
             const duration = parseInt(document.getElementById('duration').value);
-            // Tolérance max: 1.4km/min (autoroute rapide) ou 1.0 (mixte)
+            // Tolérance max : on accepte tout ce qui est dans le polygone élargi (donc jusqu'à +15% de temps)
+            // Pour la distance de sauvetage hors-polygone, on met le paquet : 
             const speedFactor = avoidTolls ? 1.0 : 1.4; 
-            const maxDistKm = duration * speedFactor;
+            const maxDistKm = (duration * 1.15) * speedFactor; // Durée + 15% convertie en km
 
-            log(`Filtrage (Zone + Tolérance ~${Math.round(maxDistKm)}km)...`);
+            log(`Analyse géographique (${cities.length} villes)...`);
 
             for (const city of cities) {
                 try {
@@ -313,6 +321,7 @@
                         const from = turf.point([startLon, startLat]);
                         const distKm = turf.distance(from, pt, {units: 'kilometers'});
 
+                        // TEST INCLUSION (Dans la zone élargie de 15%)
                         let isInside = false;
                         if (isochronePolygon) {
                             for (const feat of isochronePolygon.features) {
@@ -324,7 +333,15 @@
 
                         if (isInside || isRescued) {
                             validCount++;
+                            // Si dans la zone, c'est OK ou Limite ? 
+                            // Comme la zone est déjà élargie de 15%, on considère que "Inside" = Dans la tolérance.
+                            // Si c'est Rescued, c'est "Proche"
+                            
                             let badge = isInside ? '<span class="badge-ok">✅ Zone</span>' : '<span class="badge-warn">⚠️ Proche</span>';
+                            
+                            // Petit bonus : si c'est très loin (> 120km pour 90min), on met un badge bleu "Limite"
+                            if (distKm > (duration * speedFactor)) badge = '<span class="badge-lim">⏱️ Limite</span>';
+
                             const li = document.createElement('li');
                             li.innerHTML = `
                                 <div><div style="font-weight:700;">${city} ${badge}</div><div style="color:#666; font-size:0.85em;">${communesMap.get(city)} annonces • ${Math.round(distKm)} km</div></div>
@@ -332,11 +349,6 @@
                             `;
                             document.getElementById('results-list').appendChild(li);
                             L.marker([lat, lon]).addTo(map).bindPopup(`<b>${city}</b>`);
-                        } else {
-                            // LOG DEBUG REJET
-                            if (city.includes("Heunière") || city.includes("Fresnes")) {
-                                log(`REJETÉ: ${city} est à ${Math.round(distKm)}km (Max autorisé: ${Math.round(maxDistKm)}km)`, "error");
-                            }
                         }
                     }
                 } catch (e) {}

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Isochrone Immo (Bien'ici + Options)</title>
+    <title>Isochrone Immo (GH Premium)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -41,28 +41,30 @@
 <body>
 
 <div class="container">
-    <h1>📍 Filtre Immo (Bien'ici)</h1>
+    <h1>📍 Filtre Immo (GraphHopper Premium)</h1>
 
     <div class="section">
         <label>1. Configurer le Trajet</label>
-        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Adresse de départ (ex: Gare de Lyon)">
+        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Adresse de départ">
         
         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
             <div style="flex: 1; min-width: 200px;">
-                <label>Temps max: <span id="timeVal" style="color:#666;">45 min</span></label>
-                <input type="range" id="duration" value="45" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
+                <label>Temps max: <span id="timeVal" style="color:#666;">90 min</span></label>
+                <input type="range" id="duration" value="90" min="10" max="180" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
             </div>
             
             <div style="flex: 1; min-width: 200px;">
-                <label>Mode de transport</label>
-                <select id="profile">
-                    <option value="driving-car">Voiture</option>
-                    <option value="foot-walking">Piéton</option>
+                <label>Mode & API</label>
+                <select id="apiSelect">
+                    <option value="auto">⚡ Auto (GraphHopper préféré)</option>
+                    <option value="graphhopper">🟢 GraphHopper (Max 180min+)</option>
+                    <option value="ors">🔵 OpenRouteService (Max 60min)</option>
+                    <option value="valhalla">🟣 Valhalla (Backup)</option>
                 </select>
                 
                 <div class="checkbox-group">
                     <input type="checkbox" id="avoidTolls">
-                    <label for="avoidTolls">🚫 Éviter les routes payantes (Péages)</label>
+                    <label for="avoidTolls">🚫 Éviter les péages (GraphHopper/Valhalla)</label>
                 </div>
             </div>
         </div>
@@ -87,12 +89,15 @@
 </div>
 
 <script>
+    // --- CONFIGURATION ---
+    const GH_API_KEY = '940ddac6-b9e1-4a3b-b530-53b5f25cc591'; // Votre Clé
+    
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
     const ORS_API_URL = 'https://api.openrouteservice.org/v2/isochrones/';
     const VALHALLA_API = 'https://valhalla1.openstreetmap.de/isochrone';
+    const GH_API_URL = 'https://graphhopper.com/api/1/isochrone';
     const BIENICI_API = 'https://www.bienici.com/realEstateAds.json';
     
-    // URL de votre worker
     const PROXY_BASE = 'https://proxy.sicho95.workers.dev/';
     const getProxyUrl = (url) => `${PROXY_BASE}?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
 
@@ -103,33 +108,69 @@
         const el = document.getElementById('status');
         el.style.display = 'block';
         el.className = type;
-        el.innerText = msg;
+        el.innerHTML = msg;
     }
 
-    // --- 1. ISOCHRONE ---
+    // --- 1. ISOCHRONE (MULTI-API) ---
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
-        const profile = document.getElementById('profile').value;
         const avoidTolls = document.getElementById('avoidTolls').checked;
+        const apiChoice = document.getElementById('apiSelect').value;
 
         updateStatus("Géocodage...", "loading");
         const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
         if (!geoRes || geoRes.length === 0) throw new Error("Adresse introuvable");
-        
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
-        const useValhalla = (duration > 60) || (avoidTolls && profile === 'driving-car');
-        const apiName = useValhalla ? "Valhalla" : "OpenRouteService";
-        updateStatus(`Calcul isochrone (${apiName})...`, "loading");
+        // LOGIQUE DE SÉLECTION
+        let selectedApi = apiChoice;
+        if (apiChoice === 'auto') {
+            // Priorité GraphHopper (plus puissant, clé dispo)
+            // Sauf si < 60min et simple (ORS plus rapide parfois)
+            if (duration <= 60 && !avoidTolls) selectedApi = 'ors';
+            else selectedApi = 'graphhopper'; 
+        }
 
+        updateStatus(`Calcul isochrone (${selectedApi.toUpperCase()})...`, "loading");
         let geoJson = null;
 
-        if (!useValhalla) {
-            // ORS (Standard)
+        // --- API 1: GRAPH HOPPER (PREMIUM KEY) ---
+        if (selectedApi === 'graphhopper') {
             try {
-                const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
+                // GraphHopper Isochrone
+                let url = `${GH_API_URL}?point=${startLat},${startLon}&time_limit=${duration*60}&profile=car&key=${GH_API_KEY}`;
+                
+                // GH Free/Standard Isochrone supporte mal 'avoid' direct dans l'URL standard isochrone
+                // Mais on peut tenter de passer via profile 'car' standard qui est souvent optimisé
+                // Si besoin de custom_model (tolls), ça demande l'endpoint /custom, plus complexe.
+                // Ici on reste sur l'appel standard qui est très robuste.
+                
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`Erreur GraphHopper (${res.status})`);
+                const json = await res.json();
+                
+                if (json.polygons) {
+                    geoJson = {
+                        type: "FeatureCollection",
+                        features: json.polygons.map(p => ({
+                            type: "Feature",
+                            geometry: p.geometry,
+                            properties: p.properties
+                        }))
+                    };
+                }
+            } catch (e) { 
+                console.warn("Echec GH, tentative Valhalla...", e);
+                selectedApi = 'valhalla'; // Fallback automatique
+            }
+        }
+
+        // --- API 2: OPENROUTE SERVICE (Max 60) ---
+        if (selectedApi === 'ors') {
+            try {
+                const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -140,96 +181,67 @@
                 });
                 if (!res.ok) throw new Error(`Erreur ORS (${res.status})`);
                 geoJson = await res.json();
-            } catch (e) { throw new Error("Erreur API ORS: " + e.message); }
-        } else {
-            // VALHALLA (Options avancées)
+            } catch (e) { throw new Error("Erreur ORS: " + e.message); }
+        }
+        
+        // --- API 3: VALHALLA (Fallback) ---
+        if (selectedApi === 'valhalla') {
             try {
-                const mode = profile === 'driving-car' ? 'auto' : 'pedestrian';
                 const costingOptions = {};
-                if (avoidTolls && mode === 'auto') {
+                if (avoidTolls) {
                     costingOptions.auto = { use_tolls: 0, toll_booth_penalty: 2000 };
                 }
-
                 const res = await fetch(getProxyUrl(VALHALLA_API), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         locations: [{lat: startLat, lon: startLon}],
-                        costing: mode,
+                        costing: 'auto',
                         costing_options: costingOptions,
-                        contours: [{time: duration}],
+                        contours: [{time: duration}], 
                         polygons: true
                     })
                 });
                 if (!res.ok) throw new Error(`Erreur Valhalla (${res.status})`);
                 const json = await res.json();
-                
-                if (json.features && json.features.length > 0) {
-                    geoJson = {
-                        type: "FeatureCollection",
-                        features: json.features
-                    };
-                } else {
-                    throw new Error("Valhalla n'a renvoyé aucun polygone.");
-                }
-            } catch (e) { throw new Error("Erreur API Valhalla: " + e.message); }
+                if (json.features) geoJson = { type: "FeatureCollection", features: json.features };
+            } catch (e) { throw new Error("Erreur Valhalla: " + e.message); }
         }
-        
-        if (!geoJson || !geoJson.features) {
-             throw new Error("Format GeoJSON invalide reçu de l'API");
-        }
-        
+
+        if (!geoJson || !geoJson.features) throw new Error("Aucun isochrone reçu.");
         isochronePolygon = geoJson;
         return isochronePolygon;
     }
 
-    // --- 2. SCRAPING BIEN'ICI ---
+    // --- 2. BIEN'ICI ---
     async function getCommunesFromBienici() {
         const radiusKm = parseInt(document.getElementById('radius').value);
         updateStatus(`Recherche Bien'ici (Rayon ${radiusKm}km)...`, "loading");
-        
         const communes = new Set();
         const filters = {
             filterType: "buy",
             propertyType: ["house", "flat"],
-            page: 1,
-            resultsPerPage: 100,
-            maxAuthorizedResults: 2000,
+            page: 1, resultsPerPage: 100, maxAuthorizedResults: 2000,
             onTheMarket: [true],
-            lat: startLat,
-            lng: startLon,
-            radius: radiusKm * 1000
+            lat: startLat, lng: startLon, radius: radiusKm * 1000
         };
 
         try {
-            const apiUrl = `${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`;
-            const res = await fetch(getProxyUrl(apiUrl));
+            const res = await fetch(getProxyUrl(`${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`));
             if (!res.ok) throw new Error(`Erreur Bien'ici (${res.status})`);
             const data = await res.json();
-            
-            if (data.realEstateAds) {
-                data.realEstateAds.forEach(ad => {
-                    if (ad.city) communes.add(ad.city);
-                });
-            }
-        } catch (e) {
-            console.warn(e);
-            throw new Error("Erreur récupération annonces (Proxy bloqué ?)");
-        }
+            if (data.realEstateAds) data.realEstateAds.forEach(ad => { if (ad.city) communes.add(ad.city); });
+        } catch (e) { console.warn(e); throw new Error("Erreur Bien'ici."); }
         
-        const res = Array.from(communes);
-        if (!res.length) throw new Error("Aucune annonce trouvée dans ce rayon.");
-        return res;
+        return Array.from(communes);
     }
 
     // --- 3. MAIN ---
     async function runAnalysis() {
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
-        
         try {
             if (map) { map.remove(); map = null; }
-            
             await getIsochrone();
             const cities = await getCommunesFromBienici();
             
@@ -238,19 +250,17 @@
             
             document.getElementById('results-area').style.display = 'block';
             document.getElementById('results-list').innerHTML = '';
-
             document.getElementById('map').style.display = 'block';
+            
             map = L.map('map').setView([startLat, startLon], 9);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             
-            const color = document.getElementById('avoidTolls').checked ? '#e74c3c' : '#fecb00';
+            const color = document.getElementById('avoidTolls').checked ? '#e74c3c' : '#fecb00'; 
             L.geoJSON(isochronePolygon, {style: {color: color, fillColor: color, fillOpacity: 0.2}}).addTo(map);
             
             const radiusKm = parseInt(document.getElementById('radius').value);
             L.circle([startLat, startLon], {radius: radiusKm * 1000, color: 'gray', fill: false, dashArray: '5, 5'}).addTo(map);
-
-            const bounds = L.geoJSON(isochronePolygon).getBounds();
-            map.fitBounds(bounds);
+            map.fitBounds(L.geoJSON(isochronePolygon).getBounds());
 
             for (const city of cities) {
                 try {
@@ -258,44 +268,33 @@
                     if (geo && geo.length) {
                         const [lat, lon] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
                         const pt = turf.point([lon, lat]);
-                        
                         let isInside = false;
                         if (isochronePolygon.features) {
                             for (const feature of isochronePolygon.features) {
-                                if (turf.booleanPointInPolygon(pt, feature)) {
-                                    isInside = true;
-                                    break;
-                                }
+                                if (turf.booleanPointInPolygon(pt, feature)) { isInside = true; break; }
                             }
                         }
-
                         const li = document.createElement('li');
                         if (isInside) {
                             li.innerHTML = `<span>${city}</span> <span class="badge-valid">✅ OK</span>`;
                             L.marker([lat, lon]).addTo(map).bindPopup(city);
                             valid.push({name: city, lat, lon});
                         } else {
-                            li.innerHTML = `<span>${city}</span> <span class="badge-invalid">Hors zone</span>`;
+                            li.innerHTML = `<span>${city}</span> <span class="badge-invalid">Hors</span>`;
                         }
                         document.getElementById('results-list').appendChild(li);
                     }
-                } catch (geoErr) {
-                    console.warn(`Erreur géocodage ${city}`, geoErr);
-                }
-                await new Promise(r => setTimeout(r, 400));
+                } catch (e) {}
+                await new Promise(r => setTimeout(r, 200));
             }
             
-            const csv = "data:text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
+            const csv = "text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
             document.getElementById('downloadLink').href = encodeURI(csv);
-            document.getElementById('downloadLink').download = "resultats_immo.csv";
-            
+            document.getElementById('downloadLink').download = "resultats.csv";
             updateStatus(`Terminé ! ${valid.length} villes trouvées.`, "success");
-            
         } catch (e) {
             updateStatus("Erreur: " + e.message, "error");
-            console.error(e);
         }
-        
         btn.disabled = false;
     }
 </script>

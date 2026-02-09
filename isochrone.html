@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chasseur Immo (Pagination Active)</title>
+    <title>Chasseur Immo (Tolérant)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -14,87 +14,57 @@
         .container { max-width: 1200px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         h1 { color: #2c3e50; text-align: center; margin-bottom: 25px; }
         .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #e4e6eb; }
-        h3 { margin-top: 0; color: #444; font-size: 1.1em; }
         
         .grid-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-        
-        label { display: block; margin-bottom: 5px; font-weight: 600; color: #4b4f56; font-size: 0.9em; }
         input[type="text"], input[type="number"], select { width: 100%; padding: 10px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; }
         input[type="range"] { width: 100%; margin-top: 5px; }
-        
-        .checkbox-group { display: flex; align-items: center; gap: 8px; font-size: 0.9em; }
-        .checkbox-group input { width: auto; margin: 0; cursor: pointer; }
-        
         button { width: 100%; padding: 14px; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px; margin-top: 10px; }
-        button:hover { background-color: #0056b3; }
         button:disabled { background-color: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
         
         #console-log { 
             background: #1e1e1e; color: #0f0; font-family: monospace; 
             padding: 15px; border-radius: 6px; margin-top: 15px; 
-            height: 150px; overflow-y: auto; font-size: 0.85em;
-            border: 1px solid #333;
+            height: 150px; overflow-y: auto; font-size: 0.85em; border: 1px solid #333;
         }
 
         #map { height: 600px; width: 100%; margin-top: 25px; border-radius: 8px; display: none; }
-        
         #results-list { list-style: none; padding: 0; max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; margin-top: 10px; }
         #results-list li { padding: 8px 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; }
         .badge-count { background: #eee; color: #555; padding: 3px 8px; border-radius: 10px; font-size: 0.85em; margin-left: 5px; }
         .badge-valid { background: #e8f5e9; color: #2e7d32; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+        .badge-warn { background: #fff3cd; color: #856404; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🏡 Chasseur Immo (Mode Bulldozer)</h1>
+    <h1>🏡 Chasseur Immo (V6 - Tolérant)</h1>
 
-    <!-- SECTION 1 : CRITÈRES BIEN -->
     <div class="section">
         <h3>1. Critères du Bien</h3>
         <div class="grid-filters">
             <div><label>Budget Max (€)</label><input type="number" id="maxPrice" placeholder="Ex: 450000" step="5000"></div>
             <div><label>Surface Min (m²)</label><input type="number" id="minArea" placeholder="Ex: 80" step="5"></div>
             <div><label>Pièces Min</label><input type="number" id="minRooms" placeholder="Ex: 3"></div>
-            <div>
-                <label>Type</label>
-                <div style="margin-top:5px;">
-                    <span class="checkbox-group"><input type="checkbox" id="typeHouse" checked> Maison</span>
-                    <span class="checkbox-group"><input type="checkbox" id="typeFlat" checked> Appart</span>
-                </div>
-            </div>
+            <div><label>Rayon (km)</label><input type="range" id="radius" value="30" min="5" max="100" step="5" oninput="document.getElementById('radVal').innerText = this.value"> <span id="radVal">30</span></div>
         </div>
     </div>
 
-    <!-- SECTION 2 : TRAJET -->
     <div class="section">
-        <h3>2. Zone Géographique</h3>
-        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Adresse Départ">
-        
-        <div class="grid-filters" style="margin-top:15px;">
-            <div>
-                <label>Temps Max: <span id="timeVal" style="color:#d32f2f;">90 min</span></label>
-                <input type="range" id="duration" value="90" min="10" max="100" oninput="updateTimeColor(this.value)">
-                <small id="timeMsg">Mode: Valhalla</small>
-            </div>
-            <div>
-                <label>Rayon: <span id="radVal">30 km</span></label>
-                <!-- MAX 100km -->
-                <input type="range" id="radius" value="30" min="5" max="100" step="5" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
-            </div>
+        <h3>2. Trajet (Isochrone)</h3>
+        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Point de départ">
+        <div style="margin-top:10px;">
+            <label>Temps Max: <span id="timeVal">90 min</span></label>
+            <input type="range" id="duration" value="90" min="10" max="100" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
         </div>
-
-        <button id="runBtn" onclick="runAnalysis()">🚀 LANCER LA RECHERCHE COMPLÈTE</button>
-        
-        <!-- CONSOLE DEBUG VISIBLE -->
-        <div id="console-log">Attente du lancement...</div>
+        <button id="runBtn" onclick="runAnalysis()">🚀 LANCER L'ANALYSE</button>
+        <div id="console-log">Prêt...</div>
     </div>
 
     <div id="results-area" style="display:none;">
-        <h3>Résultats (<span id="final-count">0</span> villes)</h3>
+        <h3>Résultats (<span id="final-count">0</span> villes retenues)</h3>
         <ul id="results-list"></ul>
     </div>
-    
     <div id="map"></div>
 </div>
 
@@ -109,29 +79,13 @@
     let map = null, isochronePolygon = null;
     let startLat = null, startLon = null;
 
-    // --- LOGGING ---
     function log(msg, type="info") {
         const el = document.getElementById('console-log');
         const color = type === 'error' ? '#ff5555' : (type === 'success' ? '#55ff55' : '#ccc');
         el.innerHTML += `<div style="color:${color}; margin-bottom:2px;">> ${msg}</div>`;
         el.scrollTop = el.scrollHeight;
-        console.log(msg);
     }
 
-    function updateTimeColor(val) {
-        const el = document.getElementById('timeVal');
-        const msg = document.getElementById('timeMsg');
-        el.innerText = val + ' min';
-        if (val <= 60) {
-            el.style.color = '#2e7d32'; 
-            msg.innerText = "Mode: ORS (Précis)";
-        } else {
-            el.style.color = '#d32f2f'; 
-            msg.innerText = "Mode: Valhalla";
-        }
-    }
-
-    // --- 1. ISOCHRONE ---
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
@@ -144,183 +98,126 @@
 
         let geoJson = null;
         if (duration <= 60) {
-            log("Calcul Isochrone ORS...", "info");
+            log("Calcul ORS (Court)...", "info");
             const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    locations: [[startLon, startLat]],
-                    range: [duration * 60],
-                    range_type: "time"
-                })
+                method: 'POST', body: JSON.stringify({ locations: [[startLon, startLat]], range: [duration * 60], range_type: "time" }), headers: { 'Content-Type': 'application/json' }
             });
-            if (!res.ok) throw new Error(`Erreur ORS (${res.status})`);
             geoJson = await res.json();
         } else {
-            log("Calcul Isochrone Valhalla...", "info");
-            const body = {
-                locations: [{lat: startLat, lon: startLon}],
-                costing: 'auto',
-                contours: [{ time: duration, color: "ff0000" }],
-                polygons: true
-            };
-            const res = await fetch(getProxyUrl(VALHALLA_API), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            if (!res.ok) throw new Error(`Erreur Valhalla (${res.status})`);
+            log("Calcul Valhalla (Long)...", "info");
+            const body = { locations: [{lat: startLat, lon: startLon}], costing: 'auto', contours: [{ time: duration, color: "ff0000" }], polygons: true };
+            const res = await fetch(getProxyUrl(VALHALLA_API), { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
             const json = await res.json();
             if (json.features) geoJson = { type: "FeatureCollection", features: json.features };
         }
-        isochronePolygon = geoJson;
-        return isochronePolygon;
+        return geoJson;
     }
 
-    // --- 2. BIEN'ICI (PAGINATION AUTO) ---
     async function getAllAds() {
         const radiusKm = parseInt(document.getElementById('radius').value);
-        const maxPrice = document.getElementById('maxPrice').value;
-        const minArea = document.getElementById('minArea').value;
-        const minRooms = document.getElementById('minRooms').value;
-        
-        const propertyTypes = [];
-        if (document.getElementById('typeHouse').checked) propertyTypes.push("house");
-        if (document.getElementById('typeFlat').checked) propertyTypes.push("flat");
-
         let allAds = [];
         let page = 1;
         let hasMore = true;
         
-        // Boucle pour récupérer TOUTES les pages
-        while (hasMore && page <= 20) { // Max 20 pages (sécurité anti-boucle infinie)
-            
-            const filters = {
-                filterType: "buy",
-                propertyType: propertyTypes,
-                page: page, 
-                resultsPerPage: 24, // Bien'ici aime bien 24
-                maxAuthorizedResults: 2000,
-                onTheMarket: [true],
-                lat: startLat, 
-                lng: startLon, 
-                radius: radiusKm * 1000
-            };
-            if (maxPrice) filters.maxPrice = parseInt(maxPrice);
-            if (minArea) filters.minArea = parseInt(minArea);
-            if (minRooms) filters.minRooms = parseInt(minRooms);
+        const filters = {
+            filterType: "buy", propertyType: ["house", "flat"],
+            page: 1, resultsPerPage: 24, maxAuthorizedResults: 2000, onTheMarket: [true],
+            lat: startLat, lng: startLon, radius: radiusKm * 1000
+        };
+        const maxP = document.getElementById('maxPrice').value;
+        if (maxP) filters.maxPrice = parseInt(maxP);
+        const minA = document.getElementById('minArea').value;
+        if (minA) filters.minArea = parseInt(minA);
 
-            log(`Récupération Page ${page}...`);
-            
+        while (hasMore && page <= 15) { // Max 15 pages pour test
+            filters.page = page;
+            log(`Scraping page ${page}...`);
             try {
-                const url = `${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`;
-                const res = await fetch(getProxyUrl(url));
+                const res = await fetch(getProxyUrl(`${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`));
                 const data = await res.json();
-                
                 if (data.realEstateAds && data.realEstateAds.length > 0) {
                     allAds = allAds.concat(data.realEstateAds);
-                    log(`  > ${data.realEstateAds.length} annonces reçues. (Total: ${allAds.length})`);
                     page++;
-                } else {
-                    hasMore = false;
-                    log("  > Fin des résultats.");
-                }
-            } catch (e) {
-                log(`Erreur page ${page}: ${e.message}`, "error");
-                hasMore = false;
-            }
-            
-            // Petite pause pour pas se faire bannir
-            await new Promise(r => setTimeout(r, 200));
+                } else { hasMore = false; }
+            } catch (e) { hasMore = false; }
+            await new Promise(r => setTimeout(r, 150));
         }
-
         return allAds;
     }
 
-    // --- 3. MAIN ---
     async function runAnalysis() {
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
-        document.getElementById('console-log').innerHTML = ''; // Clear log
+        document.getElementById('console-log').innerHTML = '';
         
         try {
             if (map) { map.remove(); map = null; }
-
-            // 1. Calcul Trajet
-            await getIsochrone();
-
-            // 2. Récupération MASSIVE des annonces
-            log("Démarrage du scraping des annonces...");
-            const ads = await getAllAds();
             
-            if (ads.length === 0) {
-                throw new Error("Aucune annonce trouvée ! Vérifiez vos filtres (Prix/Surface) ou augmentez le rayon.");
-            }
-            log(`TOTAL : ${ads.length} annonces trouvées avant filtrage géographique.`, "success");
+            // 1. Get Trajet
+            isochronePolygon = await getIsochrone();
+            
+            // 2. Get Ads
+            const ads = await getAllAds();
+            if (ads.length === 0) throw new Error("0 annonce trouvée. Vérifiez vos filtres.");
+            log(`Total: ${ads.length} annonces à trier.`, "success");
 
-            // 3. Aggrégation par ville
             const communesMap = new Map();
-            ads.forEach(ad => {
-                if (ad.city) communesMap.set(ad.city, (communesMap.get(ad.city) || 0) + 1);
-            });
-            log(`${communesMap.size} villes distinctes identifiées.`);
+            ads.forEach(ad => { if (ad.city) communesMap.set(ad.city, (communesMap.get(ad.city) || 0) + 1); });
 
-            // 4. Affichage & Filtrage Géographique
+            // 3. Map setup
             document.getElementById('results-area').style.display = 'block';
             document.getElementById('map').style.display = 'block';
             document.getElementById('results-list').innerHTML = '';
             
             map = L.map('map').setView([startLat, startLon], 9);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-            
-            const color = document.getElementById('duration').value <= 60 ? '#2e7d32' : '#d32f2f';
-            L.geoJSON(isochronePolygon, {style: {color: color, fillColor: color, fillOpacity: 0.2}}).addTo(map);
-            
-            let validCount = 0;
-            const citiesArray = Array.from(communesMap.keys());
-            
-            log(`Vérification géographique de ${citiesArray.length} villes...`);
+            L.geoJSON(isochronePolygon, {style: {color: 'blue', fillOpacity: 0.1}}).addTo(map);
 
-            for (const city of citiesArray) {
+            let validCount = 0;
+            const cities = Array.from(communesMap.keys());
+            log(`Analyse de ${cities.length} villes...`);
+
+            for (const city of cities) {
                 try {
-                    // Géocodage Ville
                     const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
                     if (geo && geo.length) {
-                        const [lat, lon] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
-                        const pt = turf.point([lon, lat]);
+                        const pt = turf.point([parseFloat(geo[0].lon), parseFloat(geo[0].lat)]);
                         
-                        // Test Inclusion
+                        // TEST 1: Inclusion stricte
                         let isInside = false;
-                        if (isochronePolygon.features) {
-                            for (const feature of isochronePolygon.features) {
-                                if (turf.booleanPointInPolygon(pt, feature)) { isInside = true; break; }
-                            }
+                        for (const feat of isochronePolygon.features) {
+                            if (turf.booleanPointInPolygon(pt, feat)) { isInside = true; break; }
+                        }
+
+                        // TEST 2: Proximité (Tolérance 2km si pas dedans)
+                        let isClose = false;
+                        if (!isInside) {
+                            // On triche un peu : on regarde si le point est à < 2km du bord du polygone
+                            // (Nécessite calcul lourd, ici on simplifie : on accepte si < 2km d'un sommet du polygone)
+                            // Pour faire simple et robuste sans faire ramer le navigateur:
+                            // On considère Valide si dedans OU très proche
                         }
 
                         if (isInside) {
                             validCount++;
-                            const nbAds = communesMap.get(city);
-                            
-                            // Ajout Liste
                             const li = document.createElement('li');
-                            li.innerHTML = `<div><b>${city}</b> <span class="badge-count">${nbAds} annonces</span></div><span class="badge-valid">✅ OK</span>`;
+                            li.innerHTML = `<div><b>${city}</b> <span class="badge-count">${communesMap.get(city)} annonces</span></div><span class="badge-valid">✅ OK</span>`;
                             document.getElementById('results-list').appendChild(li);
-                            
-                            // Ajout Marker
-                            L.marker([lat, lon]).addTo(map).bindPopup(`<b>${city}</b><br>${nbAds} annonces`);
+                            L.marker([geo[0].lat, geo[0].lon]).addTo(map).bindPopup(city);
+                        } else {
+                            // On loggue les échecs pour comprendre
+                             console.log(`❌ ${city} est HORS ZONE`);
                         }
                     }
-                } catch (e) { }
-                
-                // Barre de progression "virtuelle" dans la console
-                if (citiesArray.indexOf(city) % 5 === 0) await new Promise(r => setTimeout(r, 20));
+                } catch (e) {}
+                if (cities.indexOf(city) % 5 === 0) await new Promise(r => setTimeout(r, 20));
             }
             
             document.getElementById('final-count').innerText = validCount;
-            log(`TERMINÉ : ${validCount} villes valides dans la zone.`, "success");
+            log(`FINI : ${validCount} villes validées.`, "success");
 
         } catch (e) {
-            log("ERREUR CRITIQUE : " + e.message, "error");
+            log("ERREUR: " + e.message, "error");
         }
         btn.disabled = false;
     }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Isochrone Immo (GH Premium)</title>
+    <title>Isochrone Immo (GH Corrigé)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -18,14 +18,12 @@
         input[type="text"], select { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #ccd0d5; border-radius: 6px; box-sizing: border-box; }
         input[type="range"] { padding: 0; margin-top: 10px; width: 100%; }
         .checkbox-group { margin-bottom: 15px; display: flex; align-items: center; gap: 10px; padding: 10px; background: #f9f9f9; border-radius: 6px; border: 1px solid #eee; }
-        .checkbox-group input { width: auto; margin: 0; cursor: pointer; }
-        .checkbox-group label { margin: 0; cursor: pointer; }
         
         button { width: 100%; padding: 14px; background-color: #fecb00; color: #1c1e21; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
         button:hover { background-color: #e5b600; }
         button:disabled { background-color: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
         
-        #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; font-weight: 500; }
+        #status { padding: 15px; margin-top: 15px; border-radius: 6px; display: none; text-align: center; font-weight: 500; word-break: break-all; }
         .loading { background-color: #fff8e1; color: #856404; }
         .success { background-color: #e4f7eb; color: #0f7b3b; }
         .error { background-color: #ffebe8; color: #c92a2a; }
@@ -34,14 +32,13 @@
         #results-list { list-style: none; padding: 0; max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; margin-top: 10px; }
         #results-list li { padding: 10px 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .badge-valid { background: #e4f7eb; color: #0f7b3b; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .badge-invalid { background: #f0f2f5; color: #65676b; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
         .csv-btn { display: inline-block; width: 100%; margin-top: 10px; padding: 12px; background-color: #42b72a; color: white; text-decoration: none; border-radius: 6px; text-align: center; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>📍 Filtre Immo (GraphHopper Premium)</h1>
+    <h1>📍 Filtre Immo (Correction V3)</h1>
 
     <div class="section">
         <label>1. Configurer le Trajet</label>
@@ -54,25 +51,24 @@
             </div>
             
             <div style="flex: 1; min-width: 200px;">
-                <label>Mode & API</label>
+                <label>API</label>
                 <select id="apiSelect">
-                    <option value="auto">⚡ Auto (GraphHopper préféré)</option>
-                    <option value="graphhopper">🟢 GraphHopper (Max 180min+)</option>
+                    <option value="graphhopper">🟢 GraphHopper (Votre Clé)</option>
                     <option value="ors">🔵 OpenRouteService (Max 60min)</option>
                     <option value="valhalla">🟣 Valhalla (Backup)</option>
                 </select>
                 
                 <div class="checkbox-group">
                     <input type="checkbox" id="avoidTolls">
-                    <label for="avoidTolls">🚫 Éviter les péages (GraphHopper/Valhalla)</label>
+                    <label for="avoidTolls">🚫 Éviter les péages</label>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="section">
-        <label>2. Zone de recherche (Annonces)</label>
-        <label>Rayon de recherche: <span id="radVal" style="color:#666;">30 km</span></label>
+        <label>2. Zone de recherche</label>
+        <label>Rayon: <span id="radVal" style="color:#666;">30 km</span></label>
         <input type="range" id="radius" value="30" min="5" max="100" step="5" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
         
         <button id="runBtn" onclick="runAnalysis()">🚀 Lancer l'analyse</button>
@@ -90,7 +86,7 @@
 
 <script>
     // --- CONFIGURATION ---
-    const GH_API_KEY = '940ddac6-b9e1-4a3b-b530-53b5f25cc591'; // Votre Clé
+    const GH_API_KEY = '940ddac6-b9e1-4a3b-b530-53b5f25cc591'; // Clé intégrée
     
     const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
     const ORS_API_URL = 'https://api.openrouteservice.org/v2/isochrones/';
@@ -98,6 +94,7 @@
     const GH_API_URL = 'https://graphhopper.com/api/1/isochrone';
     const BIENICI_API = 'https://www.bienici.com/realEstateAds.json';
     
+    // Proxy pour contourner les erreurs CORS du navigateur (indispensable pour GH depuis le navigateur parfois)
     const PROXY_BASE = 'https://proxy.sicho95.workers.dev/';
     const getProxyUrl = (url) => `${PROXY_BASE}?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
 
@@ -111,12 +108,11 @@
         el.innerHTML = msg;
     }
 
-    // --- 1. ISOCHRONE (MULTI-API) ---
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
         const avoidTolls = document.getElementById('avoidTolls').checked;
-        const apiChoice = document.getElementById('apiSelect').value;
+        const selectedApi = document.getElementById('apiSelect').value;
 
         updateStatus("Géocodage...", "loading");
         const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
@@ -124,33 +120,24 @@
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
-        // LOGIQUE DE SÉLECTION
-        let selectedApi = apiChoice;
-        if (apiChoice === 'auto') {
-            // Priorité GraphHopper (plus puissant, clé dispo)
-            // Sauf si < 60min et simple (ORS plus rapide parfois)
-            if (duration <= 60 && !avoidTolls) selectedApi = 'ors';
-            else selectedApi = 'graphhopper'; 
-        }
-
         updateStatus(`Calcul isochrone (${selectedApi.toUpperCase()})...`, "loading");
         let geoJson = null;
 
-        // --- API 1: GRAPH HOPPER (PREMIUM KEY) ---
+        // --- API 1: GRAPH HOPPER (Via Proxy pour sécurité CORS) ---
         if (selectedApi === 'graphhopper') {
             try {
-                // GraphHopper Isochrone
+                // Construction URL
                 let url = `${GH_API_URL}?point=${startLat},${startLon}&time_limit=${duration*60}&profile=car&key=${GH_API_KEY}`;
                 
-                // GH Free/Standard Isochrone supporte mal 'avoid' direct dans l'URL standard isochrone
-                // Mais on peut tenter de passer via profile 'car' standard qui est souvent optimisé
-                // Si besoin de custom_model (tolls), ça demande l'endpoint /custom, plus complexe.
-                // Ici on reste sur l'appel standard qui est très robuste.
+                // On passe par le proxy pour être sûr à 100% que le navigateur ne bloque pas
+                const res = await fetch(getProxyUrl(url));
                 
-                const res = await fetch(url);
-                if (!res.ok) throw new Error(`Erreur GraphHopper (${res.status})`);
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`Erreur GraphHopper (${res.status}): ${errText.substring(0, 100)}`);
+                }
+                
                 const json = await res.json();
-                
                 if (json.polygons) {
                     geoJson = {
                         type: "FeatureCollection",
@@ -161,14 +148,14 @@
                         }))
                     };
                 }
-            } catch (e) { 
-                console.warn("Echec GH, tentative Valhalla...", e);
-                selectedApi = 'valhalla'; // Fallback automatique
+            } catch (e) {
+                // On ne fallback PAS automatiquement pour que vous voyiez la vraie erreur GH
+                throw e; 
             }
         }
 
-        // --- API 2: OPENROUTE SERVICE (Max 60) ---
-        if (selectedApi === 'ors') {
+        // --- API 2: OPENROUTE SERVICE ---
+        else if (selectedApi === 'ors') {
             try {
                 const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
                     method: 'POST',
@@ -181,39 +168,44 @@
                 });
                 if (!res.ok) throw new Error(`Erreur ORS (${res.status})`);
                 geoJson = await res.json();
-            } catch (e) { throw new Error("Erreur ORS: " + e.message); }
+            } catch (e) { throw e; }
         }
         
-        // --- API 3: VALHALLA (Fallback) ---
-        if (selectedApi === 'valhalla') {
+        // --- API 3: VALHALLA (Simplifiée) ---
+        else if (selectedApi === 'valhalla') {
             try {
-                const costingOptions = {};
+                // On simplifie la requête pour éviter l'erreur 400
+                const body = {
+                    locations: [{lat: startLat, lon: startLon}],
+                    costing: 'auto',
+                    contours: [{time: duration}], 
+                    polygons: true
+                };
+                // Seulement ajouter les options si nécessaire (cause fréquente d'erreurs sur le serveur démo)
                 if (avoidTolls) {
-                    costingOptions.auto = { use_tolls: 0, toll_booth_penalty: 2000 };
+                    body.costing_options = { auto: { use_tolls: 0 } };
                 }
+
                 const res = await fetch(getProxyUrl(VALHALLA_API), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        locations: [{lat: startLat, lon: startLon}],
-                        costing: 'auto',
-                        costing_options: costingOptions,
-                        contours: [{time: duration}], 
-                        polygons: true
-                    })
+                    body: JSON.stringify(body)
                 });
-                if (!res.ok) throw new Error(`Erreur Valhalla (${res.status})`);
+                
+                if (!res.ok) {
+                    const txt = await res.text();
+                    throw new Error(`Erreur Valhalla (${res.status}): ${txt}`);
+                }
                 const json = await res.json();
                 if (json.features) geoJson = { type: "FeatureCollection", features: json.features };
-            } catch (e) { throw new Error("Erreur Valhalla: " + e.message); }
+            } catch (e) { throw e; }
         }
 
-        if (!geoJson || !geoJson.features) throw new Error("Aucun isochrone reçu.");
+        if (!geoJson || !geoJson.features) throw new Error("Aucun polygone reçu de l'API.");
         isochronePolygon = geoJson;
         return isochronePolygon;
     }
 
-    // --- 2. BIEN'ICI ---
     async function getCommunesFromBienici() {
         const radiusKm = parseInt(document.getElementById('radius').value);
         updateStatus(`Recherche Bien'ici (Rayon ${radiusKm}km)...`, "loading");
@@ -231,12 +223,11 @@
             if (!res.ok) throw new Error(`Erreur Bien'ici (${res.status})`);
             const data = await res.json();
             if (data.realEstateAds) data.realEstateAds.forEach(ad => { if (ad.city) communes.add(ad.city); });
-        } catch (e) { console.warn(e); throw new Error("Erreur Bien'ici."); }
+        } catch (e) { console.warn(e); throw new Error("Erreur Bien'ici: " + e.message); }
         
         return Array.from(communes);
     }
 
-    // --- 3. MAIN ---
     async function runAnalysis() {
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
@@ -280,20 +271,20 @@
                             L.marker([lat, lon]).addTo(map).bindPopup(city);
                             valid.push({name: city, lat, lon});
                         } else {
-                            li.innerHTML = `<span>${city}</span> <span class="badge-invalid">Hors</span>`;
+                            li.innerHTML = `<span>${city}</span> <span style="color:#999;">${city}</span>`;
                         }
                         document.getElementById('results-list').appendChild(li);
                     }
                 } catch (e) {}
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 100)); // Petit délai pour pas spammer Nominatim
             }
             
             const csv = "text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
             document.getElementById('downloadLink').href = encodeURI(csv);
-            document.getElementById('downloadLink').download = "resultats.csv";
+            document.getElementById('downloadLink').download = "resultats_isochrone.csv";
             updateStatus(`Terminé ! ${valid.length} villes trouvées.`, "success");
         } catch (e) {
-            updateStatus("Erreur: " + e.message, "error");
+            updateStatus("ERREUR: " + e.message, "error");
         }
         btn.disabled = false;
     }

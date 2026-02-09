@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chasseur Immo V13 (Tolérance)</title>
+    <title>Chasseur Immo V14 (Fix Pagination)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -15,7 +15,6 @@
         h1 { color: #007aff; text-align: center; margin-bottom: 20px; font-size: 1.4em; }
         
         .section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e5e5ea; }
-        h3 { margin-top: 0; color: #3a3a3c; font-size: 1.1em; font-weight: 600; margin-bottom: 15px; }
         
         .grid-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
         label { display: block; margin-bottom: 6px; font-weight: 500; color: #8e8e93; font-size: 0.85em; text-transform: uppercase; }
@@ -28,8 +27,7 @@
         .slider-group { margin-bottom: 20px; }
         .slider-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
         input[type="range"] { width: 100%; height: 6px; border-radius: 5px; background: #e5e5ea; outline: none; -webkit-appearance: none; display: block; }
-        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #007aff; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-
+        
         button { width: 100%; padding: 16px; background-color: #007aff; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 17px; margin-top: 10px; }
         button:disabled { background-color: #d1d1d6; }
 
@@ -61,7 +59,7 @@
 <body>
 
 <div class="container">
-    <h1>🎯 Chasseur Immo V13</h1>
+    <h1>🎯 Chasseur Immo V14</h1>
 
     <div class="section">
         <h3>1. Vos Critères</h3>
@@ -142,13 +140,11 @@
         el.scrollTop = el.scrollHeight;
     }
 
-    // ON AJOUTE UNE ZONE TAMPON DE 15% DANS L'ISOCHRONE
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const baseDuration = parseInt(document.getElementById('duration').value);
-        // ASTUCE : On demande un polygone un peu plus grand (+15%) pour la tolérance
+        // Tolérance +15% pour le polygone
         const duration = Math.round(baseDuration * 1.15); 
-        
         const avoidTolls = document.getElementById('avoidTolls').checked;
 
         log(`Géocodage...`);
@@ -203,13 +199,21 @@
     async function getAllAds() {
         const radiusKm = parseInt(document.getElementById('radius').value);
         let allAds = [];
-        let page = 1;
+        let from = 0;
+        const limit = 50; // Batch size augmenté
         let hasMore = true;
+        let loopCount = 0;
         seenAds.clear();
         
         const filters = {
             filterType: "buy", propertyType: [],
-            page: 1, resultsPerPage: 24, maxAuthorizedResults: 2000, onTheMarket: [true],
+            // REMPLACEMENT DE PAGE PAR FROM/LIMIT
+            size: limit,
+            from: 0,
+            sortBy: "publicationDate", // TRI STABLE IMPORTANT
+            sortOrder: "desc",
+            maxAuthorizedResults: 2000, 
+            onTheMarket: [true],
             lat: startLat, lng: startLon, radius: radiusKm * 1000
         };
         
@@ -224,23 +228,40 @@
         if (document.getElementById('minArea').value) filters.minArea = parseInt(document.getElementById('minArea').value);
         if (document.getElementById('minRooms').value) filters.minRooms = parseInt(document.getElementById('minRooms').value);
 
-        while (hasMore && page <= 30) { 
-            filters.page = page;
-            log(`Page ${page}...`);
+        // Boucle avec sécurité (max 40 tours = 2000 annonces)
+        while (hasMore && loopCount < 40) { 
+            filters.from = from; // Curseurs
+            
+            log(`Chargement annonces ${from} à ${from + limit}...`);
             try {
                 const res = await fetch(getProxyUrl(`${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`));
                 const data = await res.json();
-                if (data.realEstateAds?.length > 0) {
+                
+                if (data.realEstateAds && data.realEstateAds.length > 0) {
                     const newAds = data.realEstateAds.filter(ad => {
                         if (seenAds.has(ad.id)) return false;
                         seenAds.add(ad.id);
                         return true;
                     });
-                    allAds = allAds.concat(newAds);
-                    page++;
-                } else hasMore = false;
-            } catch (e) { hasMore = false; }
-            await new Promise(r => setTimeout(r, 100));
+                    
+                    if (newAds.length === 0) {
+                        // Si l'API renvoie des données mais que ce sont TOUS des doublons, on arrête.
+                        log("Fin des résultats uniques.");
+                        hasMore = false;
+                    } else {
+                        allAds = allAds.concat(newAds);
+                        from += limit; // On avance le curseur
+                        loopCount++;
+                    }
+                } else { 
+                    hasMore = false; // Plus de résultats
+                }
+            } catch (e) { 
+                log("Erreur réseau (pause 1s)...", "error");
+                await new Promise(r => setTimeout(r, 1000));
+                hasMore = false; 
+            }
+            await new Promise(r => setTimeout(r, 200)); // Pause anti-ban light
         }
         return allAds;
     }
@@ -283,8 +304,8 @@
             
             // 2. Annonces
             globalAds = await getAllAds();
-            if (globalAds.length === 0) throw new Error("0 annonce.");
-            log(`${globalAds.length} annonces scannées.`, "success");
+            if (globalAds.length === 0) throw new Error("0 annonce trouvée avec ces critères.");
+            log(`${globalAds.length} annonces uniques récupérées !`, "success");
 
             const communesMap = new Map();
             globalAds.forEach(ad => { if (ad.city) communesMap.set(ad.city, (communesMap.get(ad.city) || 0) + 1); });
@@ -303,12 +324,11 @@
             let validCount = 0;
             const cities = Array.from(communesMap.keys());
             const duration = parseInt(document.getElementById('duration').value);
-            // Tolérance max : on accepte tout ce qui est dans le polygone élargi (donc jusqu'à +15% de temps)
-            // Pour la distance de sauvetage hors-polygone, on met le paquet : 
+            // Tolérance
             const speedFactor = avoidTolls ? 1.0 : 1.4; 
-            const maxDistKm = (duration * 1.15) * speedFactor; // Durée + 15% convertie en km
+            const maxDistKm = (duration * 1.15) * speedFactor;
 
-            log(`Analyse géographique (${cities.length} villes)...`);
+            log(`Filtrage GEO (${cities.length} villes)...`);
 
             for (const city of cities) {
                 try {
@@ -321,7 +341,6 @@
                         const from = turf.point([startLon, startLat]);
                         const distKm = turf.distance(from, pt, {units: 'kilometers'});
 
-                        // TEST INCLUSION (Dans la zone élargie de 15%)
                         let isInside = false;
                         if (isochronePolygon) {
                             for (const feat of isochronePolygon.features) {
@@ -333,13 +352,7 @@
 
                         if (isInside || isRescued) {
                             validCount++;
-                            // Si dans la zone, c'est OK ou Limite ? 
-                            // Comme la zone est déjà élargie de 15%, on considère que "Inside" = Dans la tolérance.
-                            // Si c'est Rescued, c'est "Proche"
-                            
                             let badge = isInside ? '<span class="badge-ok">✅ Zone</span>' : '<span class="badge-warn">⚠️ Proche</span>';
-                            
-                            // Petit bonus : si c'est très loin (> 120km pour 90min), on met un badge bleu "Limite"
                             if (distKm > (duration * speedFactor)) badge = '<span class="badge-lim">⏱️ Limite</span>';
 
                             const li = document.createElement('li');

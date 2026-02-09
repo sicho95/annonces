@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chasseur Immo (Dashboard V8)</title>
+    <title>Chasseur Immo V10 (Option Péage)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -12,9 +12,9 @@
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f2f2f7; color: #1c1c1e; margin: 0; padding: 15px; }
         .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
-        h1 { color: #007aff; text-align: center; margin-bottom: 20px; font-size: 1.5em; }
+        h1 { color: #007aff; text-align: center; margin-bottom: 20px; font-size: 1.4em; }
         
-        .section { margin-bottom: 25px; padding-bottom: 20px; border-bottom: 1px solid #e5e5ea; }
+        .section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e5e5ea; }
         h3 { margin-top: 0; color: #3a3a3c; font-size: 1.1em; font-weight: 600; margin-bottom: 15px; }
         
         .grid-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
@@ -26,76 +26,75 @@
 
         #console-log { background: #1c1c1e; color: #30d158; padding: 15px; border-radius: 10px; margin-top: 15px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.8em; }
 
+        #results-list { list-style: none; padding: 0; max-height: 500px; overflow-y: auto; }
         #results-list li { 
             background: white; border: 1px solid #e5e5ea; border-radius: 12px; 
             padding: 15px; margin-bottom: 10px; display: flex; 
             justify-content: space-between; align-items: center; 
         }
-        .btn-see { 
-            background: #eef2ff; color: #007aff; border: none; cursor: pointer;
-            padding: 8px 16px; border-radius: 20px; font-size: 0.9em; font-weight: 600;
-        }
-
-        /* MODAL / DETAILS */
-        #details-panel { 
-            display: none; border-top: 2px solid #e5e5ea; margin-top: 20px; padding-top: 20px; 
-        }
-        .ad-card {
-            display: flex; gap: 15px; background: #fff; border: 1px solid #eee; 
-            padding: 10px; margin-bottom: 10px; border-radius: 8px;
-        }
-        .ad-img { width: 100px; height: 80px; background: #eee; border-radius: 6px; object-fit: cover; }
+        
+        .badge-ok { background: #d1fae5; color: #065f46; padding: 4px 8px; border-radius: 6px; font-size: 0.8em; font-weight: bold; }
+        .badge-warn { background: #fef3c7; color: #92400e; padding: 4px 8px; border-radius: 6px; font-size: 0.8em; font-weight: bold; }
+        .btn-see { background: #eef2ff; color: #007aff; border: none; padding: 8px 16px; border-radius: 20px; font-weight: 600; cursor: pointer; }
+        
+        #details-panel { display: none; border-top: 2px solid #e5e5ea; margin-top: 20px; padding-top: 20px; }
+        .ad-card { display: flex; gap: 15px; background: #fff; border: 1px solid #eee; padding: 10px; margin-bottom: 10px; border-radius: 8px; }
+        .ad-img { width: 90px; height: 70px; background: #eee; border-radius: 6px; object-fit: cover; }
         .ad-info { flex: 1; }
-        .ad-price { font-weight: bold; color: #007aff; font-size: 1.1em; }
-        .ad-desc { font-size: 0.85em; color: #666; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .ad-link { 
-            display: inline-block; margin-top: 8px; font-size: 0.8em; 
-            color: #fff; background: #333; padding: 4px 10px; border-radius: 4px; text-decoration: none; 
-        }
+        .ad-price { font-weight: bold; color: #007aff; }
+        .ad-link { display: inline-block; margin-top: 5px; font-size: 0.8em; color: #fff; background: #333; padding: 4px 10px; border-radius: 4px; text-decoration: none; }
 
-        #map { height: 400px; width: 100%; margin-top: 20px; border-radius: 16px; }
-        .check-pill { display: inline-flex; align-items: center; background: #f2f2f7; padding: 8px 14px; border-radius: 20px; font-size: 0.9em; font-weight: 600; margin-right: 8px; }
+        #map { height: 350px; width: 100%; margin-top: 20px; border-radius: 16px; }
+        .check-pill { display: inline-flex; align-items: center; background: #f2f2f7; padding: 8px 14px; border-radius: 20px; font-size: 0.9em; font-weight: 600; margin-right: 8px; cursor: pointer; }
+        .check-pill input { margin-right: 8px; transform: scale(1.2); }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🎯 Chasseur Immo V8</h1>
+    <h1>🎯 Chasseur Immo V10</h1>
 
     <div class="section">
         <h3>1. Vos Critères</h3>
         <div class="grid-filters">
-            <div><label>Budget Max (€)</label><input type="number" id="maxPrice" placeholder="Ex: 450000" step="10000"></div>
-            <div><label>Surface Min (m²)</label><input type="number" id="minArea" placeholder="Ex: 80" step="5"></div>
-            <div><label>Pièces Min</label><input type="number" id="minRooms" placeholder="Ex: 3"></div>
+            <div><label>Budget Max (€)</label><input type="number" id="maxPrice" value="145000" step="5000"></div>
+            <div><label>Surface Min (m²)</label><input type="number" id="minArea" value="100" step="5"></div>
+            <div><label>Pièces Min</label><input type="number" id="minRooms" value="5"></div>
         </div>
         <div style="margin-top: 15px;">
             <label class="check-pill"><input type="checkbox" id="typeHouse" checked> Maison</label>
-            <label class="check-pill"><input type="checkbox" id="typeFlat" checked> Appart</label>
+            <label class="check-pill"><input type="checkbox" id="typeFlat"> Appart</label>
         </div>
     </div>
 
     <div class="section">
-        <h3>2. Zone</h3>
-        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson" placeholder="Départ">
-        <div style="margin-top:15px; display:flex; justify-content:space-between;">
-            <label>Trajet: <span id="timeVal">90 min</span></label>
-            <label>Rayon: <span id="radVal">30 km</span></label>
-        </div>
-        <input type="range" id="duration" value="90" min="10" max="100" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
-        <input type="range" id="radius" value="30" min="5" max="100" step="5" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
+        <h3>2. Zone & Trajet</h3>
+        <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson">
         
-        <button id="runBtn" onclick="runAnalysis()">🚀 LANCER</button>
+        <div style="margin-top:15px; margin-bottom:15px;">
+            <label class="check-pill" style="background:#ffebee; color:#b71c1c;">
+                <input type="checkbox" id="avoidTolls"> 🚫 Éviter les péages
+            </label>
+        </div>
+
+        <div style="display:flex; justify-content:space-between;">
+            <label>Trajet: <span id="timeVal" style="color:#007aff; font-weight:bold;">90 min</span></label>
+            <label>Rayon Scan: <span id="radVal" style="color:#007aff; font-weight:bold;">150 km</span></label>
+        </div>
+        
+        <input type="range" id="duration" value="90" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
+        <input type="range" id="radius" value="150" min="20" max="200" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
+
+        <button id="runBtn" onclick="runAnalysis()">🚀 SCANNER</button>
         <div id="console-log">Prêt...</div>
     </div>
 
     <div id="results-area" style="display:none;">
-        <h3>Villes retenues (<span id="final-count">0</span>)</h3>
+        <h3>Résultats (<span id="final-count">0</span>)</h3>
         <ul id="results-list"></ul>
         
-        <!-- PANNEAU DÉTAIL ANNONCES -->
         <div id="details-panel">
-            <h3 id="details-title">Annonces à ...</h3>
+            <h3 id="details-title">...</h3>
             <div id="details-content"></div>
         </div>
     </div>
@@ -113,36 +112,77 @@
 
     let map = null, isochronePolygon = null;
     let startLat = null, startLon = null;
-    let globalAds = []; // Stockage global pour l'affichage détail
+    let globalAds = [];
 
     function log(msg, type="info") {
         const el = document.getElementById('console-log');
-        el.innerHTML += `<div style="color:${type==='error'?'#ff453a':'#30d158'}; margin-bottom:2px;">> ${msg}</div>`;
+        el.innerHTML += `<div style="color:${type==='error'?'#ff453a':(type==='success'?'#30d158':'#a1a1a6')}; margin-bottom:2px;">> ${msg}</div>`;
         el.scrollTop = el.scrollHeight;
     }
 
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
+        const avoidTolls = document.getElementById('avoidTolls').checked;
+
         log(`Géocodage...`);
         const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
         if (!geoRes.length) throw new Error("Adresse introuvable");
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
+        // CONFIGURATION DU "SANS PÉAGE"
+        // Valhalla (API Gratuite) gère l'option 'toll_booth_penalty' ou 'use_tolls'
+        // ORS gère 'avoid_features': ['highways', 'tollways']
+
         let geoJson = null;
+
         if (duration <= 60) {
-            log(`Calcul ORS...`);
-            const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
-                method: 'POST', body: JSON.stringify({ locations: [[startLon, startLat]], range: [duration * 60], range_type: "time" }), headers: { 'Content-Type': 'application/json' }
-            });
-            geoJson = await res.json();
+            log(`Calcul ORS (${avoidTolls ? 'Sans péage' : 'Standard'})...`);
+            // ORS Config
+            const body = { 
+                locations: [[startLon, startLat]], 
+                range: [duration * 60], 
+                range_type: "time"
+            };
+            if (avoidTolls) {
+                // Sur isochrones ORS, l'avoid tolls est parfois ignoré sur endpoint standard, 
+                // mais on l'envoie via options (si supporté par l'instance) ou profile
+                // Le profil "driving-car" standard inclut les péages. Il n'y a pas de profil "no-toll" direct.
+                // On tente d'envoyer 'options' qui est la spec officielle v2
+                body.options = { avoid_features: ["tollways"] };
+            }
+
+            try {
+                const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
+                    method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }
+                });
+                geoJson = await res.json();
+            } catch(e) { log("Erreur ORS", "error"); }
+
         } else {
-            log(`Calcul Valhalla...`);
-            const body = { locations: [{lat: startLat, lon: startLon}], costing: 'auto', contours: [{ time: duration, color: "ff0000" }], polygons: true };
-            const res = await fetch(getProxyUrl(VALHALLA_API), { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
-            const json = await res.json();
-            if (json.features) geoJson = { type: "FeatureCollection", features: json.features };
+            log(`Calcul Valhalla (${avoidTolls ? 'Sans péage' : 'Standard'})...`);
+            // Valhalla Config
+            const costingOpts = { auto: {} };
+            if (avoidTolls) {
+                // Penalité massive pour éviter les péages
+                costingOpts.auto.use_tolls = 0; 
+                costingOpts.auto.toll_booth_penalty = 2000;
+            }
+
+            const body = { 
+                locations: [{lat: startLat, lon: startLon}], 
+                costing: 'auto', 
+                costing_options: costingOpts,
+                contours: [{ time: duration, color: avoidTolls ? "ff8800" : "007aff" }], 
+                polygons: true 
+            };
+            
+            try {
+                const res = await fetch(getProxyUrl(VALHALLA_API), { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+                const json = await res.json();
+                if (json.features) geoJson = { type: "FeatureCollection", features: json.features };
+            } catch(e) { log("Erreur Valhalla", "error"); }
         }
         return geoJson;
     }
@@ -152,20 +192,22 @@
         let allAds = [];
         let page = 1;
         let hasMore = true;
+        
         const filters = {
             filterType: "buy", propertyType: [],
             page: 1, resultsPerPage: 24, maxAuthorizedResults: 2000, onTheMarket: [true],
             lat: startLat, lng: startLon, radius: radiusKm * 1000
         };
+        
         if (document.getElementById('typeHouse').checked) filters.propertyType.push("house");
         if (document.getElementById('typeFlat').checked) filters.propertyType.push("flat");
         if (document.getElementById('maxPrice').value) filters.maxPrice = parseInt(document.getElementById('maxPrice').value);
         if (document.getElementById('minArea').value) filters.minArea = parseInt(document.getElementById('minArea').value);
         if (document.getElementById('minRooms').value) filters.minRooms = parseInt(document.getElementById('minRooms').value);
 
-        while (hasMore && page <= 15) {
+        while (hasMore && page <= 20) {
             filters.page = page;
-            log(`Page ${page}...`);
+            log(`Scan Bien'ici Page ${page}...`);
             try {
                 const res = await fetch(getProxyUrl(`${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`));
                 const data = await res.json();
@@ -180,37 +222,26 @@
     }
 
     function showDetails(cityName) {
-        // Filtrer les annonces de la ville cliquée
         const cityAds = globalAds.filter(ad => ad.city === cityName);
-        
-        const panel = document.getElementById('details-panel');
         const container = document.getElementById('details-content');
-        document.getElementById('details-title').innerText = `Annonces à ${cityName} (${cityAds.length})`;
-        
+        document.getElementById('details-title').innerText = `${cityName} (${cityAds.length})`;
         container.innerHTML = '';
         cityAds.forEach(ad => {
-            // Gestion image (si dispo)
-            let imgHtml = '<div class="ad-img" style="background:#ddd; display:flex; align-items:center; justify-content:center; color:#888; font-size:0.7em;">Pas d\'img</div>';
-            if (ad.photos && ad.photos.length > 0) {
-                imgHtml = `<img src="${ad.photos[0].url}" class="ad-img" loading="lazy">`;
-            }
-
-            const html = `
+            let imgHtml = '<div class="ad-img" style="background:#eee;"></div>';
+            if (ad.photos?.[0]?.url) imgHtml = `<img src="${ad.photos[0].url}" class="ad-img" loading="lazy">`;
+            container.insertAdjacentHTML('beforeend', `
                 <div class="ad-card">
                     ${imgHtml}
                     <div class="ad-info">
-                        <div class="ad-price">${ad.price ? ad.price.toLocaleString() + ' €' : 'Prix NC'}</div>
-                        <div style="font-weight:600; font-size:0.9em;">${ad.surfaceArea}m² • ${ad.roomsQuantity}p</div>
-                        <div class="ad-desc">${ad.description ? ad.description.substring(0, 100) + '...' : ''}</div>
-                        <a href="https://www.bienici.com/annonce/${ad.id}" target="_blank" class="ad-link">Voir annonce</a>
+                        <div class="ad-price">${ad.price?.toLocaleString()} €</div>
+                        <div style="font-size:0.9em;">${ad.surfaceArea}m² • ${ad.roomsQuantity}p</div>
+                        <a href="https://www.bienici.com/annonce/${ad.id}" target="_blank" class="ad-link">Voir</a>
                     </div>
                 </div>
-            `;
-            container.insertAdjacentHTML('beforeend', html);
+            `);
         });
-        
-        panel.style.display = 'block';
-        panel.scrollIntoView({behavior: "smooth"});
+        document.getElementById('details-panel').style.display = 'block';
+        document.getElementById('details-panel').scrollIntoView({behavior: "smooth"});
     }
 
     async function runAnalysis() {
@@ -218,12 +249,12 @@
         btn.disabled = true;
         document.getElementById('console-log').innerHTML = '';
         document.getElementById('details-panel').style.display = 'none';
-        
+
         try {
             if (map) { map.remove(); map = null; }
+
             isochronePolygon = await getIsochrone();
-            globalAds = await getAllAds(); // Stockage global
-            
+            globalAds = await getAllAds();
             if (globalAds.length === 0) throw new Error("0 annonce trouvée.");
             log(`${globalAds.length} annonces totales.`, "success");
 
@@ -234,43 +265,63 @@
             document.getElementById('map').style.display = 'block';
             document.getElementById('results-list').innerHTML = '';
             
-            map = L.map('map').setView([startLat, startLon], 9);
+            map = L.map('map').setView([startLat, startLon], 8);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-            L.geoJSON(isochronePolygon, {style: {color: '#007aff', fillOpacity: 0.15}}).addTo(map);
+            
+            const avoidTolls = document.getElementById('avoidTolls').checked;
+            const color = avoidTolls ? '#d32f2f' : '#007aff';
+            if (isochronePolygon) L.geoJSON(isochronePolygon, {style: {color: color, fillOpacity: 0.15}}).addTo(map);
 
             let validCount = 0;
             const cities = Array.from(communesMap.keys());
-            log(`Analyse ${cities.length} villes...`);
+            const duration = parseInt(document.getElementById('duration').value);
+            
+            // INTELLIGENCE DISTANCE
+            // Si péage OK : on va vite -> 1.3km par minute (autoroute)
+            // Si sans péage : on va moins vite -> 0.9km par minute (nationale)
+            const speedFactor = avoidTolls ? 0.9 : 1.3;
+            const maxDistKm = duration * speedFactor;
+
+            log(`Filtrage (Max ~${Math.round(maxDistKm)}km)...`);
 
             for (const city of cities) {
                 try {
                     const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
                     if (geo.length) {
-                        const pt = turf.point([parseFloat(geo[0].lon), parseFloat(geo[0].lat)]);
+                        const lat = parseFloat(geo[0].lat);
+                        const lon = parseFloat(geo[0].lon);
+                        const pt = turf.point([lon, lat]);
+                        
+                        const from = turf.point([startLon, startLat]);
+                        const distKm = turf.distance(from, pt, {units: 'kilometers'});
+
                         let isInside = false;
-                        for (const feat of isochronePolygon.features) {
-                            if (turf.booleanPointInPolygon(pt, feat)) { isInside = true; break; }
+                        if (isochronePolygon) {
+                            for (const feat of isochronePolygon.features) {
+                                if (turf.booleanPointInPolygon(pt, feat)) { isInside = true; break; }
+                            }
                         }
 
-                        if (isInside) {
+                        // Sauvetage intelligent selon le mode péage
+                        let isRescued = (!isInside && distKm < maxDistKm);
+
+                        if (isInside || isRescued) {
                             validCount++;
-                            const count = communesMap.get(city);
-                            
-                            // Création élément liste avec bouton JS
+                            let badge = isInside ? '<span class="badge-ok">✅ Zone</span>' : '<span class="badge-warn">⚠️ Proche</span>';
                             const li = document.createElement('li');
                             li.innerHTML = `
-                                <div><div style="font-weight:700;">${city}</div><div style="color:#888; font-size:0.9em;">${count} annonces</div></div>
+                                <div><div style="font-weight:700;">${city} ${badge}</div><div style="color:#666; font-size:0.85em;">${communesMap.get(city)} annonces • ${Math.round(distKm)} km</div></div>
                                 <button class="btn-see" onclick="showDetails('${city.replace(/'/g, "\\'")}')">Voir</button>
                             `;
                             document.getElementById('results-list').appendChild(li);
-                            L.marker([geo[0].lat, geo[0].lon]).addTo(map).bindPopup(`<b>${city}</b>`);
+                            L.marker([lat, lon]).addTo(map).bindPopup(`<b>${city}</b>`);
                         }
                     }
                 } catch (e) {}
-                if (cities.indexOf(city) % 5 === 0) await new Promise(r => setTimeout(r, 20));
+                if (cities.indexOf(city) % 5 === 0) await new Promise(r => setTimeout(r, 10));
             }
             document.getElementById('final-count').innerText = validCount;
-            log("Terminé.", "success");
+            log(`Terminé !`, "success");
 
         } catch (e) { log(e.message, "error"); }
         btn.disabled = false;

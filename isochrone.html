@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chasseur Immo V11 (No Doublons)</title>
+    <title>Chasseur Immo V12 (Expert)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -21,7 +21,10 @@
         label { display: block; margin-bottom: 6px; font-weight: 500; color: #8e8e93; font-size: 0.85em; text-transform: uppercase; }
         input[type="text"], input[type="number"] { width: 100%; padding: 12px; border: 1px solid #d1d1d6; border-radius: 10px; font-size: 16px; box-sizing: border-box; }
         
-        /* SLIDERS STACKED */
+        .check-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 15px; }
+        .check-pill { display: flex; align-items: center; background: #f2f2f7; padding: 8px 12px; border-radius: 8px; font-size: 0.85em; font-weight: 600; cursor: pointer; }
+        .check-pill input { margin-right: 8px; transform: scale(1.2); }
+
         .slider-group { margin-bottom: 20px; }
         .slider-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
         input[type="range"] { width: 100%; height: 6px; border-radius: 5px; background: #e5e5ea; outline: none; -webkit-appearance: none; display: block; }
@@ -30,7 +33,7 @@
         button { width: 100%; padding: 16px; background-color: #007aff; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 17px; margin-top: 10px; }
         button:disabled { background-color: #d1d1d6; }
 
-        #console-log { background: #1c1c1e; color: #30d158; padding: 15px; border-radius: 10px; margin-top: 15px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.8em; }
+        #console-log { background: #1c1c1e; color: #30d158; padding: 15px; border-radius: 10px; margin-top: 15px; height: 120px; overflow-y: auto; font-family: monospace; font-size: 0.75em; }
 
         #results-list { list-style: none; padding: 0; max-height: 500px; overflow-y: auto; }
         #results-list li { 
@@ -51,14 +54,12 @@
         .ad-link { display: inline-block; margin-top: 5px; font-size: 0.8em; color: #fff; background: #333; padding: 4px 10px; border-radius: 4px; text-decoration: none; }
 
         #map { height: 350px; width: 100%; margin-top: 20px; border-radius: 16px; }
-        .check-pill { display: inline-flex; align-items: center; background: #f2f2f7; padding: 8px 14px; border-radius: 20px; font-size: 0.9em; font-weight: 600; margin-right: 8px; cursor: pointer; }
-        .check-pill input { margin-right: 8px; transform: scale(1.2); }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>🎯 Chasseur Immo V11</h1>
+    <h1>🎯 Chasseur Immo V12</h1>
 
     <div class="section">
         <h3>1. Vos Critères</h3>
@@ -67,9 +68,15 @@
             <div><label>Surface Min (m²)</label><input type="number" id="minArea" value="100" step="5"></div>
             <div><label>Pièces Min</label><input type="number" id="minRooms" value="5"></div>
         </div>
-        <div style="margin-top: 15px;">
-            <label class="check-pill"><input type="checkbox" id="typeHouse" checked> Maison</label>
-            <label class="check-pill"><input type="checkbox" id="typeFlat"> Appart</label>
+        
+        <!-- TOUS LES TYPES DE BIENS -->
+        <div class="check-grid">
+            <label class="check-pill"><input type="checkbox" id="typeHouse" checked> Maison / Villa</label>
+            <label class="check-pill"><input type="checkbox" id="typeFlat"> Appartement</label>
+            <label class="check-pill"><input type="checkbox" id="typeLand"> Terrain</label>
+            <label class="check-pill"><input type="checkbox" id="typeBuilding"> Immeuble</label>
+            <label class="check-pill"><input type="checkbox" id="typeLoft" checked> Loft / Atelier</label>
+            <label class="check-pill"><input type="checkbox" id="typeCastle" checked> Château / Manoir</label>
         </div>
     </div>
 
@@ -78,39 +85,34 @@
         <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson">
         
         <div style="margin-top:15px; margin-bottom:20px;">
-            <label class="check-pill" style="background:#ffebee; color:#b71c1c;">
+            <label class="check-pill" style="background:#ffebee; color:#b71c1c; display:inline-flex;">
                 <input type="checkbox" id="avoidTolls"> 🚫 Éviter les péages
             </label>
         </div>
 
-        <!-- SLIDER 1 : TRAJET -->
         <div class="slider-group">
             <div class="slider-header">
                 <label>Temps de Trajet Max</label>
                 <span id="timeVal" style="color:#007aff; font-weight:bold;">90 min</span>
             </div>
-            <!-- MAX BLOQUÉ À 100 MIN COMME DEMANDÉ -->
-            <input type="range" id="duration" value="90" min="10" max="100" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
+            <input type="range" id="duration" value="90" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
         </div>
 
-        <!-- SLIDER 2 : RAYON -->
         <div class="slider-group">
             <div class="slider-header">
-                <label>Rayon de Recherche (Scraping)</label>
-                <span id="radVal" style="color:#007aff; font-weight:bold;">150 km</span>
+                <label>Rayon Scraping (Auto-ajusté)</label>
+                <span id="radVal" style="color:#007aff; font-weight:bold;">200 km</span>
             </div>
-            <!-- MAX ÉTENDU À 250 KM -->
-            <input type="range" id="radius" value="150" min="20" max="250" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
+            <input type="range" id="radius" value="200" min="50" max="300" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
         </div>
 
-        <button id="runBtn" onclick="runAnalysis()">🚀 SCANNER</button>
+        <button id="runBtn" onclick="runAnalysis()">🚀 SCANNER TOUT</button>
         <div id="console-log">Prêt...</div>
     </div>
 
     <div id="results-area" style="display:none;">
         <h3>Résultats (<span id="final-count">0</span>)</h3>
         <ul id="results-list"></ul>
-        
         <div id="details-panel">
             <h3 id="details-title">...</h3>
             <div id="details-content"></div>
@@ -131,7 +133,6 @@
     let map = null, isochronePolygon = null;
     let startLat = null, startLon = null;
     let globalAds = [];
-    // Set pour gérer l'unicité des annonces (anti-doublon)
     let seenAds = new Set();
 
     function log(msg, type="info") {
@@ -154,7 +155,7 @@
         let geoJson = null;
 
         if (duration <= 60) {
-            log(`Calcul ORS (${avoidTolls ? 'Sans péage' : 'Standard'})...`);
+            log(`Calcul ORS...`);
             const body = { 
                 locations: [[startLon, startLat]], 
                 range: [duration * 60], 
@@ -199,7 +200,7 @@
         let allAds = [];
         let page = 1;
         let hasMore = true;
-        seenAds.clear(); // Reset du dédoublonneur
+        seenAds.clear();
         
         const filters = {
             filterType: "buy", propertyType: [],
@@ -207,27 +208,30 @@
             lat: startLat, lng: startLon, radius: radiusKm * 1000
         };
         
+        // MAPPING DES TYPES BIEN'ICI
         if (document.getElementById('typeHouse').checked) filters.propertyType.push("house");
         if (document.getElementById('typeFlat').checked) filters.propertyType.push("flat");
+        if (document.getElementById('typeLand').checked) filters.propertyType.push("land");
+        if (document.getElementById('typeBuilding').checked) filters.propertyType.push("building"); // Immeuble
+        if (document.getElementById('typeLoft').checked) filters.propertyType.push("loft"); // Loft/Atelier
+        if (document.getElementById('typeCastle').checked) filters.propertyType.push("castle"); // Château/Manoir
+        
         if (document.getElementById('maxPrice').value) filters.maxPrice = parseInt(document.getElementById('maxPrice').value);
         if (document.getElementById('minArea').value) filters.minArea = parseInt(document.getElementById('minArea').value);
         if (document.getElementById('minRooms').value) filters.minRooms = parseInt(document.getElementById('minRooms').value);
 
-        while (hasMore && page <= 20) {
+        while (hasMore && page <= 25) { // Max 25 pages pour être sûr
             filters.page = page;
             log(`Page ${page}...`);
             try {
                 const res = await fetch(getProxyUrl(`${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`));
                 const data = await res.json();
                 if (data.realEstateAds?.length > 0) {
-                    
-                    // FILTRAGE DOUBLONS ICI
                     const newAds = data.realEstateAds.filter(ad => {
-                        if (seenAds.has(ad.id)) return false; // Déjà vu
+                        if (seenAds.has(ad.id)) return false;
                         seenAds.add(ad.id);
                         return true;
                     });
-                    
                     allAds = allAds.concat(newAds);
                     page++;
                 } else hasMore = false;
@@ -251,6 +255,7 @@
                     <div class="ad-info">
                         <div class="ad-price">${ad.price?.toLocaleString()} €</div>
                         <div style="font-size:0.9em;">${ad.surfaceArea}m² • ${ad.roomsQuantity}p</div>
+                        <div style="font-size:0.8em; color:#666;">${ad.propertyType}</div>
                         <a href="https://www.bienici.com/annonce/${ad.id}" target="_blank" class="ad-link">Voir</a>
                     </div>
                 </div>
@@ -272,7 +277,7 @@
             isochronePolygon = await getIsochrone();
             globalAds = await getAllAds();
             if (globalAds.length === 0) throw new Error("0 annonce.");
-            log(`${globalAds.length} annonces uniques.`, "success");
+            log(`${globalAds.length} annonces uniques récupérées.`, "success");
 
             const communesMap = new Map();
             globalAds.forEach(ad => { if (ad.city) communesMap.set(ad.city, (communesMap.get(ad.city) || 0) + 1); });
@@ -291,10 +296,11 @@
             let validCount = 0;
             const cities = Array.from(communesMap.keys());
             const duration = parseInt(document.getElementById('duration').value);
-            const speedFactor = avoidTolls ? 0.9 : 1.3;
+            // Tolérance max: 1.4km/min (autoroute rapide) ou 1.0 (mixte)
+            const speedFactor = avoidTolls ? 1.0 : 1.4; 
             const maxDistKm = duration * speedFactor;
 
-            log(`Filtrage (Max ~${Math.round(maxDistKm)}km)...`);
+            log(`Filtrage (Zone + Tolérance ~${Math.round(maxDistKm)}km)...`);
 
             for (const city of cities) {
                 try {
@@ -326,6 +332,11 @@
                             `;
                             document.getElementById('results-list').appendChild(li);
                             L.marker([lat, lon]).addTo(map).bindPopup(`<b>${city}</b>`);
+                        } else {
+                            // LOG DEBUG REJET
+                            if (city.includes("Heunière") || city.includes("Fresnes")) {
+                                log(`REJETÉ: ${city} est à ${Math.round(distKm)}km (Max autorisé: ${Math.round(maxDistKm)}km)`, "error");
+                            }
                         }
                     }
                 } catch (e) {}

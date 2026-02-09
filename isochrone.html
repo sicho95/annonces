@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chasseur Immo V10 (Option Péage)</title>
+    <title>Chasseur Immo V11 (No Doublons)</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -17,11 +17,17 @@
         .section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #e5e5ea; }
         h3 { margin-top: 0; color: #3a3a3c; font-size: 1.1em; font-weight: 600; margin-bottom: 15px; }
         
-        .grid-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+        .grid-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
         label { display: block; margin-bottom: 6px; font-weight: 500; color: #8e8e93; font-size: 0.85em; text-transform: uppercase; }
         input[type="text"], input[type="number"] { width: 100%; padding: 12px; border: 1px solid #d1d1d6; border-radius: 10px; font-size: 16px; box-sizing: border-box; }
         
-        button { width: 100%; padding: 16px; background-color: #007aff; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 17px; margin-top: 15px; }
+        /* SLIDERS STACKED */
+        .slider-group { margin-bottom: 20px; }
+        .slider-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        input[type="range"] { width: 100%; height: 6px; border-radius: 5px; background: #e5e5ea; outline: none; -webkit-appearance: none; display: block; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: #007aff; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+
+        button { width: 100%; padding: 16px; background-color: #007aff; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 600; font-size: 17px; margin-top: 10px; }
         button:disabled { background-color: #d1d1d6; }
 
         #console-log { background: #1c1c1e; color: #30d158; padding: 15px; border-radius: 10px; margin-top: 15px; height: 100px; overflow-y: auto; font-family: monospace; font-size: 0.8em; }
@@ -52,7 +58,7 @@
 <body>
 
 <div class="container">
-    <h1>🎯 Chasseur Immo V10</h1>
+    <h1>🎯 Chasseur Immo V11</h1>
 
     <div class="section">
         <h3>1. Vos Critères</h3>
@@ -71,19 +77,31 @@
         <h3>2. Zone & Trajet</h3>
         <input type="text" id="address" value="19 Rue Paul Rivet, 92350 Le Plessis-Robinson">
         
-        <div style="margin-top:15px; margin-bottom:15px;">
+        <div style="margin-top:15px; margin-bottom:20px;">
             <label class="check-pill" style="background:#ffebee; color:#b71c1c;">
                 <input type="checkbox" id="avoidTolls"> 🚫 Éviter les péages
             </label>
         </div>
 
-        <div style="display:flex; justify-content:space-between;">
-            <label>Trajet: <span id="timeVal" style="color:#007aff; font-weight:bold;">90 min</span></label>
-            <label>Rayon Scan: <span id="radVal" style="color:#007aff; font-weight:bold;">150 km</span></label>
+        <!-- SLIDER 1 : TRAJET -->
+        <div class="slider-group">
+            <div class="slider-header">
+                <label>Temps de Trajet Max</label>
+                <span id="timeVal" style="color:#007aff; font-weight:bold;">90 min</span>
+            </div>
+            <!-- MAX BLOQUÉ À 100 MIN COMME DEMANDÉ -->
+            <input type="range" id="duration" value="90" min="10" max="100" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
         </div>
-        
-        <input type="range" id="duration" value="90" min="10" max="120" oninput="document.getElementById('timeVal').innerText = this.value + ' min'">
-        <input type="range" id="radius" value="150" min="20" max="200" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
+
+        <!-- SLIDER 2 : RAYON -->
+        <div class="slider-group">
+            <div class="slider-header">
+                <label>Rayon de Recherche (Scraping)</label>
+                <span id="radVal" style="color:#007aff; font-weight:bold;">150 km</span>
+            </div>
+            <!-- MAX ÉTENDU À 250 KM -->
+            <input type="range" id="radius" value="150" min="20" max="250" step="10" oninput="document.getElementById('radVal').innerText = this.value + ' km'">
+        </div>
 
         <button id="runBtn" onclick="runAnalysis()">🚀 SCANNER</button>
         <div id="console-log">Prêt...</div>
@@ -113,6 +131,8 @@
     let map = null, isochronePolygon = null;
     let startLat = null, startLon = null;
     let globalAds = [];
+    // Set pour gérer l'unicité des annonces (anti-doublon)
+    let seenAds = new Set();
 
     function log(msg, type="info") {
         const el = document.getElementById('console-log');
@@ -131,27 +151,16 @@
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
-        // CONFIGURATION DU "SANS PÉAGE"
-        // Valhalla (API Gratuite) gère l'option 'toll_booth_penalty' ou 'use_tolls'
-        // ORS gère 'avoid_features': ['highways', 'tollways']
-
         let geoJson = null;
 
         if (duration <= 60) {
             log(`Calcul ORS (${avoidTolls ? 'Sans péage' : 'Standard'})...`);
-            // ORS Config
             const body = { 
                 locations: [[startLon, startLat]], 
                 range: [duration * 60], 
                 range_type: "time"
             };
-            if (avoidTolls) {
-                // Sur isochrones ORS, l'avoid tolls est parfois ignoré sur endpoint standard, 
-                // mais on l'envoie via options (si supporté par l'instance) ou profile
-                // Le profil "driving-car" standard inclut les péages. Il n'y a pas de profil "no-toll" direct.
-                // On tente d'envoyer 'options' qui est la spec officielle v2
-                body.options = { avoid_features: ["tollways"] };
-            }
+            if (avoidTolls) body.options = { avoid_features: ["tollways"] };
 
             try {
                 const res = await fetch(getProxyUrl(`${ORS_API_URL}driving-car`), {
@@ -161,11 +170,9 @@
             } catch(e) { log("Erreur ORS", "error"); }
 
         } else {
-            log(`Calcul Valhalla (${avoidTolls ? 'Sans péage' : 'Standard'})...`);
-            // Valhalla Config
+            log(`Calcul Valhalla...`);
             const costingOpts = { auto: {} };
             if (avoidTolls) {
-                // Penalité massive pour éviter les péages
                 costingOpts.auto.use_tolls = 0; 
                 costingOpts.auto.toll_booth_penalty = 2000;
             }
@@ -192,6 +199,7 @@
         let allAds = [];
         let page = 1;
         let hasMore = true;
+        seenAds.clear(); // Reset du dédoublonneur
         
         const filters = {
             filterType: "buy", propertyType: [],
@@ -207,12 +215,20 @@
 
         while (hasMore && page <= 20) {
             filters.page = page;
-            log(`Scan Bien'ici Page ${page}...`);
+            log(`Page ${page}...`);
             try {
                 const res = await fetch(getProxyUrl(`${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`));
                 const data = await res.json();
                 if (data.realEstateAds?.length > 0) {
-                    allAds = allAds.concat(data.realEstateAds);
+                    
+                    // FILTRAGE DOUBLONS ICI
+                    const newAds = data.realEstateAds.filter(ad => {
+                        if (seenAds.has(ad.id)) return false; // Déjà vu
+                        seenAds.add(ad.id);
+                        return true;
+                    });
+                    
+                    allAds = allAds.concat(newAds);
                     page++;
                 } else hasMore = false;
             } catch (e) { hasMore = false; }
@@ -255,8 +271,8 @@
 
             isochronePolygon = await getIsochrone();
             globalAds = await getAllAds();
-            if (globalAds.length === 0) throw new Error("0 annonce trouvée.");
-            log(`${globalAds.length} annonces totales.`, "success");
+            if (globalAds.length === 0) throw new Error("0 annonce.");
+            log(`${globalAds.length} annonces uniques.`, "success");
 
             const communesMap = new Map();
             globalAds.forEach(ad => { if (ad.city) communesMap.set(ad.city, (communesMap.get(ad.city) || 0) + 1); });
@@ -275,10 +291,6 @@
             let validCount = 0;
             const cities = Array.from(communesMap.keys());
             const duration = parseInt(document.getElementById('duration').value);
-            
-            // INTELLIGENCE DISTANCE
-            // Si péage OK : on va vite -> 1.3km par minute (autoroute)
-            // Si sans péage : on va moins vite -> 0.9km par minute (nationale)
             const speedFactor = avoidTolls ? 0.9 : 1.3;
             const maxDistKm = duration * speedFactor;
 
@@ -302,7 +314,6 @@
                             }
                         }
 
-                        // Sauvetage intelligent selon le mode péage
                         let isRescued = (!isInside && distKm < maxDistKm);
 
                         if (isInside || isRescued) {

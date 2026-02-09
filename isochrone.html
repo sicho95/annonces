@@ -92,6 +92,7 @@
     const VALHALLA_API = 'https://valhalla1.openstreetmap.de/isochrone';
     const BIENICI_API = 'https://www.bienici.com/realEstateAds.json';
     
+    // URL de votre worker
     const PROXY_BASE = 'https://proxy.sicho95.workers.dev/';
     const getProxyUrl = (url) => `${PROXY_BASE}?url=${encodeURIComponent(url)}&_t=${Date.now()}`;
 
@@ -105,7 +106,7 @@
         el.innerText = msg;
     }
 
-    // 1. ISOCHRONE (Hybride ORS / Valhalla + Securité Turf)
+    // --- 1. ISOCHRONE ---
     async function getIsochrone() {
         const address = document.getElementById('address').value;
         const duration = parseInt(document.getElementById('duration').value);
@@ -114,63 +115,67 @@
 
         updateStatus("Géocodage...", "loading");
         const geoRes = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(address)}&format=json&limit=1`).then(r => r.json());
-        if (!geoRes.length) throw new Error("Adresse introuvable");
+        if (!geoRes || geoRes.length === 0) throw new Error("Adresse introuvable");
+        
         startLat = parseFloat(geoRes[0].lat);
         startLon = parseFloat(geoRes[0].lon);
 
         const useValhalla = (duration > 60) || (avoidTolls && profile === 'driving-car');
-        const apiName = useValhalla ? "Valhalla (Options/Temps long)" : "OpenRouteService";
+        const apiName = useValhalla ? "Valhalla" : "OpenRouteService";
         updateStatus(`Calcul isochrone (${apiName})...`, "loading");
 
         let geoJson = null;
 
         if (!useValhalla) {
-            // ORS
-            const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    locations: [[startLon, startLat]],
-                    range: [duration * 60],
-                    range_type: "time"
-                })
-            });
-            if (!res.ok) throw new Error(`Erreur ORS (${res.status})`);
-            geoJson = await res.json();
+            // ORS (Standard)
+            try {
+                const res = await fetch(getProxyUrl(`${ORS_API_URL}${profile}`), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        locations: [[startLon, startLat]],
+                        range: [duration * 60],
+                        range_type: "time"
+                    })
+                });
+                if (!res.ok) throw new Error(`Erreur ORS (${res.status})`);
+                geoJson = await res.json();
+            } catch (e) { throw new Error("Erreur API ORS: " + e.message); }
         } else {
-            // VALHALLA
-            const mode = profile === 'driving-car' ? 'auto' : 'pedestrian';
-            const costingOptions = {};
-            if (avoidTolls && mode === 'auto') {
-                costingOptions.auto = { use_tolls: 0, toll_booth_penalty: 2000 };
-            }
+            // VALHALLA (Options avancées)
+            try {
+                const mode = profile === 'driving-car' ? 'auto' : 'pedestrian';
+                const costingOptions = {};
+                if (avoidTolls && mode === 'auto') {
+                    costingOptions.auto = { use_tolls: 0, toll_booth_penalty: 2000 };
+                }
 
-            const res = await fetch(getProxyUrl(VALHALLA_API), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    locations: [{lat: startLat, lon: startLon}],
-                    costing: mode,
-                    costing_options: costingOptions,
-                    contours: [{time: duration}],
-                    polygons: true
-                })
-            });
-            if (!res.ok) throw new Error(`Erreur Valhalla (${res.status})`);
-            const json = await res.json();
-            
-            // Conversion Robuste Valhalla -> FeatureCollection
-            if (json.features && json.features.length > 0) {
-                geoJson = {
-                    type: "FeatureCollection",
-                    features: json.features
-                };
-            } else {
-                throw new Error("Valhalla n'a renvoyé aucun polygone.");
-            }
+                const res = await fetch(getProxyUrl(VALHALLA_API), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        locations: [{lat: startLat, lon: startLon}],
+                        costing: mode,
+                        costing_options: costingOptions,
+                        contours: [{time: duration}],
+                        polygons: true
+                    })
+                });
+                if (!res.ok) throw new Error(`Erreur Valhalla (${res.status})`);
+                const json = await res.json();
+                
+                if (json.features && json.features.length > 0) {
+                    geoJson = {
+                        type: "FeatureCollection",
+                        features: json.features
+                    };
+                } else {
+                    throw new Error("Valhalla n'a renvoyé aucun polygone.");
+                }
+            } catch (e) { throw new Error("Erreur API Valhalla: " + e.message); }
         }
         
-        if (!geoJson || !geoJson.features || geoJson.features.length === 0) {
+        if (!geoJson || !geoJson.features) {
              throw new Error("Format GeoJSON invalide reçu de l'API");
         }
         
@@ -178,7 +183,7 @@
         return isochronePolygon;
     }
 
-    // 2. SCRAPING BIEN'ICI
+    // --- 2. SCRAPING BIEN'ICI ---
     async function getCommunesFromBienici() {
         const radiusKm = parseInt(document.getElementById('radius').value);
         updateStatus(`Recherche Bien'ici (Rayon ${radiusKm}km)...`, "loading");
@@ -199,7 +204,7 @@
         try {
             const apiUrl = `${BIENICI_API}?filters=${encodeURIComponent(JSON.stringify(filters))}`;
             const res = await fetch(getProxyUrl(apiUrl));
-            if (!res.ok) throw new Error("Erreur Bien'ici");
+            if (!res.ok) throw new Error(`Erreur Bien'ici (${res.status})`);
             const data = await res.json();
             
             if (data.realEstateAds) {
@@ -217,17 +222,20 @@
         return res;
     }
 
-    // 3. MAIN (CORRIGÉ POUR TURF)
+    // --- 3. MAIN ---
     async function runAnalysis() {
         const btn = document.getElementById('runBtn');
         btn.disabled = true;
+        
         try {
             if (map) { map.remove(); map = null; }
+            
             await getIsochrone();
             const cities = await getCommunesFromBienici();
             
             updateStatus(`Filtrage de ${cities.length} villes...`, "loading");
             const valid = [];
+            
             document.getElementById('results-area').style.display = 'block';
             document.getElementById('results-list').innerHTML = '';
 
@@ -235,11 +243,9 @@
             map = L.map('map').setView([startLat, startLon], 9);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
             
-            // Affichage Isochrone
             const color = document.getElementById('avoidTolls').checked ? '#e74c3c' : '#fecb00';
             L.geoJSON(isochronePolygon, {style: {color: color, fillColor: color, fillOpacity: 0.2}}).addTo(map);
             
-            // Cercle Rayon
             const radiusKm = parseInt(document.getElementById('radius').value);
             L.circle([startLat, startLon], {radius: radiusKm * 1000, color: 'gray', fill: false, dashArray: '5, 5'}).addTo(map);
 
@@ -247,36 +253,52 @@
             map.fitBounds(bounds);
 
             for (const city of cities) {
-                const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
-                if (geo.length) {
-                    const [lat, lon] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
-                    const pt = turf.point([lon, lat]);
-                    
-                    let isInside = false;
-                    try {
-                        // FIX TURF: Itération sur chaque feature pour gérer MultiPolygon/Collection
-                        for (const feature of isochronePolygon.features) {
-                            if (turf.booleanPointInPolygon(pt, feature)) {
-                                isInside = true;
-                                break;
+                try {
+                    const geo = await fetch(`${NOMINATIM_URL}?q=${encodeURIComponent(city + ", France")}&format=json&limit=1`).then(r => r.json());
+                    if (geo && geo.length) {
+                        const [lat, lon] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
+                        const pt = turf.point([lon, lat]);
+                        
+                        let isInside = false;
+                        if (isochronePolygon.features) {
+                            for (const feature of isochronePolygon.features) {
+                                if (turf.booleanPointInPolygon(pt, feature)) {
+                                    isInside = true;
+                                    break;
+                                }
                             }
                         }
-                    } catch (err) {
-                        console.warn(`Erreur géométrie pour ${city}`, err);
+
+                        const li = document.createElement('li');
+                        if (isInside) {
+                            li.innerHTML = `<span>${city}</span> <span class="badge-valid">✅ OK</span>`;
+                            L.marker([lat, lon]).addTo(map).bindPopup(city);
+                            valid.push({name: city, lat, lon});
+                        } else {
+                            li.innerHTML = `<span>${city}</span> <span class="badge-invalid">Hors zone</span>`;
+                        }
+                        document.getElementById('results-list').appendChild(li);
                     }
-                    
-                    const li = document.createElement('li');
-                    if (isInside) {
-                        li.innerHTML = `<span>${city}</span> <span class="badge-valid">✅ OK</span>`;
-                        L.marker([lat, lon]).addTo(map).bindPopup(city);
-                        valid.push({name: city, lat, lon});
-                    } else {
-                        li.innerHTML = `<span>${city}</span> <span class="badge-invalid">Hors zone</span>`;
-                    }
-                    document.getElementById('results-list').appendChild(li);
+                } catch (geoErr) {
+                    console.warn(`Erreur géocodage ${city}`, geoErr);
                 }
-                await new Promise(r => setTimeout(r, 300)); // Rate limit Nominatim
+                await new Promise(r => setTimeout(r, 400));
             }
             
             const csv = "data:text/csv;charset=utf-8,Ville,Lat,Lon%0A" + valid.map(c => `${c.name},${c.lat},${c.lon}`).join("%0A");
-            docum
+            document.getElementById('downloadLink').href = encodeURI(csv);
+            document.getElementById('downloadLink').download = "resultats_immo.csv";
+            
+            updateStatus(`Terminé ! ${valid.length} villes trouvées.`, "success");
+            
+        } catch (e) {
+            updateStatus("Erreur: " + e.message, "error");
+            console.error(e);
+        }
+        
+        btn.disabled = false;
+    }
+</script>
+
+</body>
+</html>
